@@ -1,0 +1,142 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Updated color palette to match exact CleanMyMac-inspired colors */
+  /* Core Brand Colors */
+  --primary-magenta: #FF3EDB;
+  --deep-purple: #3B0E7A;
+  --violet: #6A1FBF;
+  --electric-blue: #2F7BFF;
+  --teal-aqua: #16B2A5;
+  
+  /* Neutrals */
+  --near-black: #05030A;
+  --dark-slate: #12101E;
+  --mid-slate: #2B2A3A;
+  --soft-grey: #C9CCDA;
+  --off-white: #F5F5FB;
+  
+  /* Utility Colors */
+  --success-green: #27D980;
+  --warning-amber: #FFB341;
+  --error-pink: #FF4B6B;
+  
+  /* Design tokens */
+  --background: #12101E;
+  --foreground: #F5F5FB;
+  --card: #2B2A3A;
+  --card-foreground: #F5F5FB;
+  --popover: #2B2A3A;
+  --popover-foreground: #F5F5FB;
+  --primary: #FF3EDB;
+  --primary-foreground: #F5F5FB;
+  --secondary: #16B2A5;
+  --secondary-foreground: #F5F5FB;
+  --muted: #2B2A3A;
+  --muted-foreground: #C9CCDA;
+  --accent: #6A1FBF;
+  --accent-foreground: #F5F5FB;
+  --destructive: #FF4B6B;
+  --destructive-foreground: #F5F5FB;
+  --border: rgba(201, 204, 218, 0.15);
+  --input: #2B2A3A;
+  --ring: #FF3EDB;
+  --radius: 1.5rem;
+}
+
+@theme inline {
+  /* Updated font variables to Montserrat */
+  --font-sans: var(--font-montserrat), system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  
+  /* Added custom color utilities for exact colors */
+  --color-primary-magenta: var(--primary-magenta);
+  --color-deep-purple: var(--deep-purple);
+  --color-violet: var(--violet);
+  --color-electric-blue: var(--electric-blue);
+  --color-teal-aqua: var(--teal-aqua);
+  --color-success-green: var(--success-green);
+  --color-warning-amber: var(--warning-amber);
+  --color-error-pink: var(--error-pink);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    /* Removed overflow-hidden to allow page scrolling */
+    @apply bg-background text-foreground;
+    /* Added the exact gradient background from requirements */
+    background: radial-gradient(circle at top left, #FF3EDB 0%, #6A1FBF 35%, #2F7BFF 60%, #16B2A5 100%);
+    background-attachment: fixed;
+  }
+}
+
+/* Updated glassmorphism utilities for CleanMyMac style */
+@layer utilities {
+  .glass-card {
+    @apply backdrop-blur-2xl bg-white/10 border border-white/15 shadow-xl;
+  }
+  
+  .glass-card-strong {
+    @apply backdrop-blur-3xl bg-white/15 border border-white/20 shadow-2xl;
+  }
+  
+  .glow-magenta {
+    box-shadow: 0 0 40px rgba(255, 62, 219, 0.5), 0 0 80px rgba(255, 62, 219, 0.3);
+  }
+  
+  .glow-violet {
+    box-shadow: 0 0 40px rgba(106, 31, 191, 0.5), 0 0 80px rgba(106, 31, 191, 0.3);
+  }
+  
+  .glow-teal {
+    box-shadow: 0 0 40px rgba(22, 178, 165, 0.5), 0 0 80px rgba(22, 178, 165, 0.3);
+  }
+  
+  .gradient-magenta-violet {
+    background: linear-gradient(135deg, #FF3EDB 0%, #6A1FBF 100%);
+  }
+  
+  .gradient-violet-blue {
+    background: linear-gradient(135deg, #6A1FBF 0%, #2F7BFF 100%);
+  }
+  
+  .gradient-blue-teal {
+    background: linear-gradient(135deg, #2F7BFF 0%, #16B2A5 100%);
+  }
+  
+  /* Added gradient text utility */
+  .gradient-text {
+    background: linear-gradient(135deg, #FF3EDB 0%, #2F7BFF 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
