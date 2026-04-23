@@ -265,9 +265,35 @@ export default function TransformPage() {
         const modelConfig = MODEL_CONFIG[result.index]
         console.log(`[v0] Auto-saving ${modelConfig.label}...`)
         try {
+          let imageDataToSave = result.preview_url
+          
+          // For large base64 images (>1MB), upload to Vercel Blob first to avoid payload limits
+          if (result.preview_url?.startsWith("data:") && result.preview_url.length > 1_000_000) {
+            console.log(`[v0] ${modelConfig.label} image is large (${(result.preview_url.length / 1024 / 1024).toFixed(2)}MB), uploading to Blob first...`)
+            try {
+              const blobResponse = await fetch("/api/upload-blob", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  base64Data: result.preview_url,
+                  filename: `${imageId}-${modelConfig.model}-${Date.now()}.jpg`,
+                }),
+              })
+              if (blobResponse.ok) {
+                const blobResult = await blobResponse.json()
+                imageDataToSave = blobResult.url
+                console.log(`[v0] ${modelConfig.label} uploaded to Blob: ${blobResult.url.substring(0, 60)}...`)
+              } else {
+                console.error(`[v0] Blob upload failed for ${modelConfig.label}:`, await blobResponse.text())
+              }
+            } catch (blobErr) {
+              console.error(`[v0] Blob upload error for ${modelConfig.label}:`, blobErr)
+            }
+          }
+          
           const saveBody = {
             parentImageId: imageId,
-            imageData: result.preview_url,
+            imageData: imageDataToSave,
             sourceModel: modelConfig.model,
             transformationPrompt: imagePrompt,
             userId: profile?.id, // May be undefined, API will try to get from parent image
@@ -310,13 +336,33 @@ export default function TransformPage() {
     setIsSaving(true)
 
     try {
+      let imageDataToSave = preview.preview_url
+      
+      // For large base64 images (>1MB), upload to Vercel Blob first to avoid payload limits
+      if (preview.preview_url.startsWith("data:") && preview.preview_url.length > 1_000_000) {
+        console.log(`[v0] Manual save: image is large, uploading to Blob first...`)
+        const blobResponse = await fetch("/api/upload-blob", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            base64Data: preview.preview_url,
+            filename: `${imageId}-${preview.model}-${Date.now()}.jpg`,
+          }),
+        })
+        if (blobResponse.ok) {
+          const blobResult = await blobResponse.json()
+          imageDataToSave = blobResult.url
+          console.log(`[v0] Manual save: uploaded to Blob`)
+        }
+      }
+      
       // Use API route instead of server action to handle large base64 images
       const response = await fetch("/api/save-variation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           parentImageId: imageId,
-          imageData: preview.preview_url,
+          imageData: imageDataToSave,
           sourceModel: preview.model,
           transformationPrompt: null,
           userId: profile?.id,
