@@ -248,10 +248,22 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
       // gpt-image-1.5 and gpt-image-2 use the edits endpoint with JSON body and images array
       console.log(`[v0] Using OpenAI ${model} with Images Edits API (JSON format)`)
       
-      // Convert image to base64 data URL for the images array
-      const imageBase64 = imageBuffer.toString("base64")
-      const mimeType = originalUrl.toLowerCase().includes(".png") ? "image/png" : "image/jpeg"
-      const dataUrl = `data:${mimeType};base64,${imageBase64}`
+      // Re-encode image through Cloudinary to handle MPO and other unsupported formats
+      // Some cameras (especially iPhones) produce JPEGs with MPO data that OpenAI rejects
+      const cloudinaryUrl = `https://res.cloudinary.com/dijfjevte/image/fetch/f_jpg,q_95/${encodeURIComponent(originalUrl)}`
+      console.log(`[v0] Re-encoding image via Cloudinary to ensure clean JPEG format...`)
+      
+      const cleanImageResponse = await fetch(cloudinaryUrl)
+      if (!cleanImageResponse.ok) {
+        console.error(`[v0] Cloudinary re-encode failed: ${cleanImageResponse.status}`)
+        throw new Error(`Failed to re-encode image: ${cleanImageResponse.status}`)
+      }
+      const cleanImageBuffer = Buffer.from(await cleanImageResponse.arrayBuffer())
+      console.log(`[v0] Re-encoded image size: ${cleanImageBuffer.length} bytes`)
+      
+      // Convert clean image to base64 data URL for the images array
+      const imageBase64 = cleanImageBuffer.toString("base64")
+      const dataUrl = `data:image/jpeg;base64,${imageBase64}`
       
       console.log(`[v0] Sending request to OpenAI images/edits API for ${model} (JSON body)...`)
       
