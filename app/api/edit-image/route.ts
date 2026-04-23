@@ -1,6 +1,9 @@
 import type { Request } from "next/server"
 import { Buffer } from "buffer"
 
+// Allow longer execution time for AI image generation (V1 and V4 can take 60-120 seconds)
+export const maxDuration = 180 // 3 minutes
+
 interface CloudinaryEdits {
   brightness: number
   contrast: number

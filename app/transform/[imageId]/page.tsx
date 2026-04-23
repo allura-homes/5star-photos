@@ -181,6 +181,11 @@ export default function TransformPage() {
     const modelPromises = MODEL_CONFIG.map(async ({ model, label }, index) => {
       try {
         console.log(`[v0] Starting ${label} (${model}) - variation ${index + 1}`)
+        
+        // Use AbortController with 3-minute timeout for slow AI models (V1/V4 can take 60-120s)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 180000) // 3 minutes
+        
         const response = await fetch("/api/edit-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -196,7 +201,10 @@ export default function TransformPage() {
             use_ai_models: true,
             image_prompt: imagePrompt,
           }),
+          signal: controller.signal,
         })
+        
+        clearTimeout(timeoutId)
 
         // Check for non-OK responses before parsing JSON
         if (!response.ok) {
