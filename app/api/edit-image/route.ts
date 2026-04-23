@@ -104,6 +104,9 @@ async function generateOpenAIImage(originalUrl: string, imagePrompt: string, mod
   const MAX_RETRIES = 5
   const BASE_DELAY = 3000 // 3 seconds
 
+  // gpt-image-1.5 uses the generations endpoint, not edits
+  const useGenerationsEndpoint = model === "gpt-image-1.5"
+  
   const isMiniModel = model === "gpt-image-1-mini"
   
   // Check if the prompt contains user instructions to ADD elements (virtual staging)
@@ -236,46 +239,94 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
       console.log("[v0] Compressed image size:", imageBuffer.byteLength)
     }
 
-    console.log(`[v0] Using OpenAI ${model} with Images Edits API`)
-
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 180000)
 
-    // Create form data for the images/edits endpoint
-    const formData = new FormData()
-    formData.append("image", new Blob([imageBuffer], { type: "image/png" }), "image.png")
-    formData.append("prompt", editingPrompt)
-    formData.append("model", model)
-    formData.append("n", "1")
-    formData.append("size", "1536x1024")
-
-    console.log(`[v0] Sending request to OpenAI images/edits API for ${model}...`)
-    
     let response: Response
-    try {
-      response = await fetch("https://api.openai.com/v1/images/edits", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: formData,
-        signal: controller.signal,
-      })
-    } catch (fetchError) {
-      clearTimeout(timeoutId)
-      console.error(`[v0] OpenAI ${model} fetch error:`, fetchError)
+    
+    if (useGenerationsEndpoint) {
+      // gpt-image-1.5 uses the generations endpoint with image input
+      console.log(`[v0] Using OpenAI ${model} with Images Generations API (with image input)`)
       
-      // Retry on network errors with exponential backoff and jitter
-      if (retryCount < MAX_RETRIES) {
-        const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
-        const jitter = Math.random() * 1000 // Add up to 1 second of random jitter
-        const delay = baseDelay + jitter
-        console.log(`[v0] Network error, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
-        await new Promise(resolve => setTimeout(resolve, delay))
-        return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
+      // Convert image to base64 for the generations endpoint
+      const imageBase64 = imageBuffer.toString("base64")
+      
+      // Determine mime type from URL or default to jpeg
+      const mimeType = originalUrl.toLowerCase().includes(".png") ? "image/png" : "image/jpeg"
+      const dataUrl = `data:${mimeType};base64,${imageBase64}`
+      
+      console.log(`[v0] Sending request to OpenAI images/generations API for ${model}...`)
+      
+      try {
+        response = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: model,
+            prompt: editingPrompt,
+            n: 1,
+            size: "1536x1024",
+            image: [{ type: "base64", media_type: mimeType, data: imageBase64 }],
+          }),
+          signal: controller.signal,
+        })
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        console.error(`[v0] OpenAI ${model} fetch error:`, fetchError)
+        
+        if (retryCount < MAX_RETRIES) {
+          const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
+          const jitter = Math.random() * 1000
+          const delay = baseDelay + jitter
+          console.log(`[v0] Network error, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
+        }
+        
+        throw new Error(`OpenAI API network error after ${MAX_RETRIES} retries: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`)
       }
+    } else {
+      // gpt-image-1 uses the edits endpoint with form data
+      console.log(`[v0] Using OpenAI ${model} with Images Edits API`)
       
-      throw new Error(`OpenAI API network error after ${MAX_RETRIES} retries: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`)
+      // Create form data for the images/edits endpoint
+      // Note: OpenAI edits endpoint requires PNG format
+      const formData = new FormData()
+      formData.append("image", new Blob([imageBuffer], { type: "image/png" }), "image.png")
+      formData.append("prompt", editingPrompt)
+      formData.append("model", model)
+      formData.append("n", "1")
+      formData.append("size", "1536x1024")
+
+      console.log(`[v0] Sending request to OpenAI images/edits API for ${model}...`)
+      
+      try {
+        response = await fetch("https://api.openai.com/v1/images/edits", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: formData,
+          signal: controller.signal,
+        })
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        console.error(`[v0] OpenAI ${model} fetch error:`, fetchError)
+        
+        if (retryCount < MAX_RETRIES) {
+          const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
+          const jitter = Math.random() * 1000
+          const delay = baseDelay + jitter
+          console.log(`[v0] Network error, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
+        }
+        
+        throw new Error(`OpenAI API network error after ${MAX_RETRIES} retries: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`)
+      }
     }
 
     clearTimeout(timeoutId)
