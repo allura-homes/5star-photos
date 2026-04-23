@@ -104,8 +104,8 @@ async function generateOpenAIImage(originalUrl: string, imagePrompt: string, mod
   const MAX_RETRIES = 5
   const BASE_DELAY = 3000 // 3 seconds
 
-  // gpt-image-1.5 uses the generations endpoint, not edits
-  const useGenerationsEndpoint = model === "gpt-image-1.5"
+  // gpt-image-1.5 and gpt-image-2 use the edits endpoint with JSON body (not FormData)
+  const useJsonEditsEndpoint = model === "gpt-image-1.5" || model === "gpt-image-2"
   
   const isMiniModel = model === "gpt-image-1-mini"
   
@@ -244,21 +244,19 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
 
     let response: Response
     
-    if (useGenerationsEndpoint) {
-      // gpt-image-1.5 uses the generations endpoint with image input
-      console.log(`[v0] Using OpenAI ${model} with Images Generations API (with image input)`)
+    if (useJsonEditsEndpoint) {
+      // gpt-image-1.5 and gpt-image-2 use the edits endpoint with JSON body and images array
+      console.log(`[v0] Using OpenAI ${model} with Images Edits API (JSON format)`)
       
-      // Convert image to base64 for the generations endpoint
+      // Convert image to base64 data URL for the images array
       const imageBase64 = imageBuffer.toString("base64")
-      
-      // Determine mime type from URL or default to jpeg
       const mimeType = originalUrl.toLowerCase().includes(".png") ? "image/png" : "image/jpeg"
       const dataUrl = `data:${mimeType};base64,${imageBase64}`
       
-      console.log(`[v0] Sending request to OpenAI images/generations API for ${model}...`)
+      console.log(`[v0] Sending request to OpenAI images/edits API for ${model} (JSON body)...`)
       
       try {
-        response = await fetch("https://api.openai.com/v1/images/generations", {
+        response = await fetch("https://api.openai.com/v1/images/edits", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -267,9 +265,10 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
           body: JSON.stringify({
             model: model,
             prompt: editingPrompt,
+            images: [{ image_url: dataUrl }],
             n: 1,
             size: "1536x1024",
-            image: [{ type: "base64", media_type: mimeType, data: imageBase64 }],
+            quality: "high",
           }),
           signal: controller.signal,
         })
@@ -289,11 +288,10 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
         throw new Error(`OpenAI API network error after ${MAX_RETRIES} retries: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`)
       }
     } else {
-      // gpt-image-1 uses the edits endpoint with form data
-      console.log(`[v0] Using OpenAI ${model} with Images Edits API`)
+      // gpt-image-1 uses the edits endpoint with form data (legacy format)
+      console.log(`[v0] Using OpenAI ${model} with Images Edits API (FormData)`)
       
       // Create form data for the images/edits endpoint
-      // Note: OpenAI edits endpoint requires PNG format
       const formData = new FormData()
       formData.append("image", new Blob([imageBuffer], { type: "image/png" }), "image.png")
       formData.append("prompt", editingPrompt)
@@ -938,10 +936,12 @@ The final image should look like it was shot with professional studio lighting -
  * - POST /api/edit-image - Generate enhanced image variation
  *
  * Supported Providers:
- * - nano_banana / nano_banana_pro: Nano Banana Pro (Gemini 3 Pro) - V1
- * - openai: OpenAI GPT Image 1 via Images Edits API - V2
- * - openai_mini: OpenAI GPT Image 1 Mini via Images Edits API - V3
- * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API - V4
+ * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API (JSON) - V1
+ * - nano_banana / nano_banana_pro: Nano Banana Pro (Gemini 3 Pro) - V2
+ * - flux_2_pro: FLUX.2 Pro Edit via fal.ai - V3
+ * - openai_2: OpenAI GPT Image 2 via Images Edits API (JSON) - V4
+ * - openai: OpenAI GPT Image 1 via Images Edits API (FormData) - Deprecated
+ * - openai_mini: OpenAI GPT Image 1 Mini via Images Edits API (FormData) - Deprecated
  *
  * See MODEL_CONFIGURATION.md for model details.
  */
@@ -977,16 +977,17 @@ export async function POST(req: Request) {
 
     const promptToUse = image_prompt || custom_prompt
 
-    const AI_PROVIDERS = [
-      "openai",
-      "openai_mini",
-      "openai_1_5",
-      "nano_banana",
-      "nano_banana_pro",
-      "gemini",
-      "gemini_3_pro",
-      "flux_2_pro",
-    ]
+const AI_PROVIDERS = [
+  "openai",
+  "openai_mini",
+  "openai_1_5",
+  "openai_2",
+  "nano_banana",
+  "nano_banana_pro",
+  "gemini",
+  "gemini_3_pro",
+  "flux_2_pro",
+  ]
     const isAIProvider = AI_PROVIDERS.includes(provider)
 
     console.log("[v0] Provider check:", {
@@ -1056,6 +1057,21 @@ export async function POST(req: Request) {
         return Response.json({
           url: openai15ImageUrl,
           filename: `${filename}-openai-1.5-v${variation_number}`,
+          variation_number,
+          needs_watermark: apply_watermark,
+        })
+      } else if (provider === "openai_2") {
+        console.log(`[v0] Calling OpenAI GPT Image 2 (v${variation_number})`)
+        const openai2ImageUrl = await generateOpenAIImage(original_url, promptToUse, "gpt-image-2")
+        console.log(
+          "[v0] OpenAI 2 returned URL type:",
+          openai2ImageUrl?.startsWith("data:") ? "base64" : "url",
+          "length:",
+          openai2ImageUrl?.length,
+        )
+        return Response.json({
+          url: openai2ImageUrl,
+          filename: `${filename}-openai-2-v${variation_number}`,
           variation_number,
           needs_watermark: apply_watermark,
         })
