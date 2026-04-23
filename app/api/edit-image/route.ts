@@ -104,6 +104,9 @@ async function generateOpenAIImage(originalUrl: string, imagePrompt: string, mod
   const MAX_RETRIES = 5
   const BASE_DELAY = 3000 // 3 seconds
 
+  // gpt-image-1.5 and gpt-image-2 use the edits endpoint with JSON body (not FormData)
+  const useJsonEditsEndpoint = model === "gpt-image-1.5" || model === "gpt-image-2"
+  
   const isMiniModel = model === "gpt-image-1-mini"
   
   // Check if the prompt contains user instructions to ADD elements (virtual staging)
@@ -236,46 +239,104 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
       console.log("[v0] Compressed image size:", imageBuffer.byteLength)
     }
 
-    console.log(`[v0] Using OpenAI ${model} with Images Edits API`)
-
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 180000)
 
-    // Create form data for the images/edits endpoint
-    const formData = new FormData()
-    formData.append("image", new Blob([imageBuffer], { type: "image/png" }), "image.png")
-    formData.append("prompt", editingPrompt)
-    formData.append("model", model)
-    formData.append("n", "1")
-    formData.append("size", "1536x1024")
-
-    console.log(`[v0] Sending request to OpenAI images/edits API for ${model}...`)
-    
     let response: Response
-    try {
-      response = await fetch("https://api.openai.com/v1/images/edits", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: formData,
-        signal: controller.signal,
-      })
-    } catch (fetchError) {
-      clearTimeout(timeoutId)
-      console.error(`[v0] OpenAI ${model} fetch error:`, fetchError)
+    
+    if (useJsonEditsEndpoint) {
+      // gpt-image-1.5 and gpt-image-2 use the edits endpoint with JSON body and images array
+      console.log(`[v0] Using OpenAI ${model} with Images Edits API (JSON format)`)
       
-      // Retry on network errors with exponential backoff and jitter
-      if (retryCount < MAX_RETRIES) {
-        const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
-        const jitter = Math.random() * 1000 // Add up to 1 second of random jitter
-        const delay = baseDelay + jitter
-        console.log(`[v0] Network error, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
-        await new Promise(resolve => setTimeout(resolve, delay))
-        return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
+      // Re-encode image through Cloudinary to handle MPO and other unsupported formats
+      // Some cameras (especially iPhones) produce JPEGs with MPO data that OpenAI rejects
+      const cloudinaryUrl = `https://res.cloudinary.com/dijfjevte/image/fetch/f_jpg,q_95/${encodeURIComponent(originalUrl)}`
+      console.log(`[v0] Re-encoding image via Cloudinary to ensure clean JPEG format...`)
+      
+      const cleanImageResponse = await fetch(cloudinaryUrl)
+      if (!cleanImageResponse.ok) {
+        console.error(`[v0] Cloudinary re-encode failed: ${cleanImageResponse.status}`)
+        throw new Error(`Failed to re-encode image: ${cleanImageResponse.status}`)
       }
+      const cleanImageBuffer = Buffer.from(await cleanImageResponse.arrayBuffer())
+      console.log(`[v0] Re-encoded image size: ${cleanImageBuffer.length} bytes`)
       
-      throw new Error(`OpenAI API network error after ${MAX_RETRIES} retries: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`)
+      // Convert clean image to base64 data URL for the images array
+      const imageBase64 = cleanImageBuffer.toString("base64")
+      const dataUrl = `data:image/jpeg;base64,${imageBase64}`
+      
+      console.log(`[v0] Sending request to OpenAI images/edits API for ${model} (JSON body)...`)
+      
+      try {
+        response = await fetch("https://api.openai.com/v1/images/edits", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: model,
+            prompt: editingPrompt,
+            images: [{ image_url: dataUrl }],
+            n: 1,
+            size: "1536x1024",
+            quality: "high",
+          }),
+          signal: controller.signal,
+        })
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        console.error(`[v0] OpenAI ${model} fetch error:`, fetchError)
+        
+        if (retryCount < MAX_RETRIES) {
+          const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
+          const jitter = Math.random() * 1000
+          const delay = baseDelay + jitter
+          console.log(`[v0] Network error, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
+        }
+        
+        throw new Error(`OpenAI API network error after ${MAX_RETRIES} retries: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`)
+      }
+    } else {
+      // gpt-image-1 uses the edits endpoint with form data (legacy format)
+      console.log(`[v0] Using OpenAI ${model} with Images Edits API (FormData)`)
+      
+      // Create form data for the images/edits endpoint
+      const formData = new FormData()
+      formData.append("image", new Blob([imageBuffer], { type: "image/png" }), "image.png")
+      formData.append("prompt", editingPrompt)
+      formData.append("model", model)
+      formData.append("n", "1")
+      formData.append("size", "1536x1024")
+
+      console.log(`[v0] Sending request to OpenAI images/edits API for ${model}...`)
+      
+      try {
+        response = await fetch("https://api.openai.com/v1/images/edits", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: formData,
+          signal: controller.signal,
+        })
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        console.error(`[v0] OpenAI ${model} fetch error:`, fetchError)
+        
+        if (retryCount < MAX_RETRIES) {
+          const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
+          const jitter = Math.random() * 1000
+          const delay = baseDelay + jitter
+          console.log(`[v0] Network error, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
+        }
+        
+        throw new Error(`OpenAI API network error after ${MAX_RETRIES} retries: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`)
+      }
     }
 
     clearTimeout(timeoutId)
@@ -887,10 +948,12 @@ The final image should look like it was shot with professional studio lighting -
  * - POST /api/edit-image - Generate enhanced image variation
  *
  * Supported Providers:
- * - nano_banana / nano_banana_pro: Nano Banana Pro (Gemini 3 Pro) - V1
- * - openai: OpenAI GPT Image 1 via Images Edits API - V2
- * - openai_mini: OpenAI GPT Image 1 Mini via Images Edits API - V3
- * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API - V4
+ * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API (JSON) - V1
+ * - nano_banana / nano_banana_pro: Nano Banana Pro (Gemini 3 Pro) - V2
+ * - flux_2_pro: FLUX.2 Pro Edit via fal.ai - V3
+ * - openai_2: OpenAI GPT Image 2 via Images Edits API (JSON) - V4
+ * - openai: OpenAI GPT Image 1 via Images Edits API (FormData) - Deprecated
+ * - openai_mini: OpenAI GPT Image 1 Mini via Images Edits API (FormData) - Deprecated
  *
  * See MODEL_CONFIGURATION.md for model details.
  */
@@ -926,16 +989,17 @@ export async function POST(req: Request) {
 
     const promptToUse = image_prompt || custom_prompt
 
-    const AI_PROVIDERS = [
-      "openai",
-      "openai_mini",
-      "openai_1_5",
-      "nano_banana",
-      "nano_banana_pro",
-      "gemini",
-      "gemini_3_pro",
-      "flux_2_pro",
-    ]
+const AI_PROVIDERS = [
+  "openai",
+  "openai_mini",
+  "openai_1_5",
+  "openai_2",
+  "nano_banana",
+  "nano_banana_pro",
+  "gemini",
+  "gemini_3_pro",
+  "flux_2_pro",
+  ]
     const isAIProvider = AI_PROVIDERS.includes(provider)
 
     console.log("[v0] Provider check:", {
@@ -1005,6 +1069,21 @@ export async function POST(req: Request) {
         return Response.json({
           url: openai15ImageUrl,
           filename: `${filename}-openai-1.5-v${variation_number}`,
+          variation_number,
+          needs_watermark: apply_watermark,
+        })
+      } else if (provider === "openai_2") {
+        console.log(`[v0] Calling OpenAI GPT Image 2 (v${variation_number})`)
+        const openai2ImageUrl = await generateOpenAIImage(original_url, promptToUse, "gpt-image-2")
+        console.log(
+          "[v0] OpenAI 2 returned URL type:",
+          openai2ImageUrl?.startsWith("data:") ? "base64" : "url",
+          "length:",
+          openai2ImageUrl?.length,
+        )
+        return Response.json({
+          url: openai2ImageUrl,
+          filename: `${filename}-openai-2-v${variation_number}`,
           variation_number,
           needs_watermark: apply_watermark,
         })
