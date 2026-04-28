@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react"
 import { useDropzone } from "react-dropzone"
 import Image from "next/image"
-// Using API route instead of Server Action to avoid serialization limits
+import { uploadImage } from "@/lib/actions/image-actions"
 import { getUserProjects, createProject } from "@/lib/actions/project-actions"
 import type { PhotoClassification, Project } from "@/lib/types"
 import { Upload, X, Loader2, Home, Mountain, HelpCircle, Check, AlertCircle, AlertTriangle, FolderOpen, Plus, ChevronDown } from "lucide-react"
@@ -133,6 +133,53 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
     })
   }
 
+  // Compress image to reduce file size for large uploads (Vercel has ~4.5MB limit)
+  async function compressImage(file: File, maxSizeMB: number = 2.5): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image()
+      img.crossOrigin = "anonymous"
+      
+      img.onload = () => {
+        const fileSizeMB = file.size / (1024 * 1024)
+        let scale = 1
+        
+        // More aggressive scaling for larger files
+        if (fileSizeMB > maxSizeMB) {
+          scale = Math.sqrt(maxSizeMB / fileSizeMB) * 0.9 // Extra 10% reduction
+        }
+        
+        // Limit max dimensions to 3000px
+        const maxDim = 3000
+        if (img.width > maxDim || img.height > maxDim) {
+          const dimScale = maxDim / Math.max(img.width, img.height)
+          scale = Math.min(scale, dimScale)
+        }
+        
+        const canvas = document.createElement("canvas")
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        
+        const ctx = canvas.getContext("2d")
+        if (!ctx) {
+          reject(new Error("Failed to get canvas context"))
+          return
+        }
+        
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        
+        // More aggressive quality for very large files
+        const quality = fileSizeMB > 8 ? 0.7 : fileSizeMB > 5 ? 0.75 : 0.8
+        const dataUrl = canvas.toDataURL("image/jpeg", quality)
+        
+        console.log(`[v0] Compressed: ${img.width}x${img.height} -> ${canvas.width}x${canvas.height}, quality: ${quality}, ~${(dataUrl.length * 0.75 / 1024 / 1024).toFixed(2)}MB`)
+        resolve(dataUrl)
+      }
+      
+      img.onerror = () => reject(new Error("Failed to load image for compression"))
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
   async function handleUpload() {
     if (uploads.length === 0) return
 
@@ -152,26 +199,46 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
       setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "uploading" } : u)))
 
       try {
-        // Use FormData and API route to avoid Server Action serialization limits
-        const formData = new FormData()
-        formData.append("file", upload.file)
-        formData.append("classification", upload.classification)
-        if (selectedProjectId) {
-          formData.append("projectId", selectedProjectId)
+        // Compress large images before upload (Vercel serverless limit is ~4.5MB)
+        const fileSizeMB = upload.file.size / (1024 * 1024)
+        let base64: string
+        
+        if (fileSizeMB > 2.5) {
+          console.log(`[v0] Large file detected (${fileSizeMB.toFixed(2)}MB), compressing...`)
+          base64 = await compressImage(upload.file, 2.5)
+        } else {
+          base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = reject
+            reader.readAsDataURL(upload.file)
+          })
         }
-        
-        console.log(`[v0] Uploading via API: ${upload.file.name} (${(upload.file.size / 1024 / 1024).toFixed(2)}MB)`)
-        
-        const response = await fetch("/api/upload-image", {
-          method: "POST",
-          body: formData,
-        })
-        
-        const result = await response.json()
 
-        if (!response.ok || result.error) {
-          throw new Error(result.error || "Upload failed")
+        // Determine proper content type
+        let contentType = upload.file.type
+        if (!contentType || contentType === "application/octet-stream") {
+          const fileExt = upload.file.name.split(".").pop()?.toLowerCase() || "jpg"
+          const mimeTypes: Record<string, string> = {
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            png: "image/png",
+            webp: "image/webp",
+            heic: "image/heic",
+          }
+          contentType = mimeTypes[fileExt] || "image/jpeg"
         }
+
+        // Create database record via server action (it handles storage upload)
+        const { error: dbError } = await uploadImage(
+          base64,
+          upload.file.name,
+          contentType,
+          upload.classification,
+          selectedProjectId,
+        )
+
+        if (dbError) throw new Error(dbError)
 
         setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "done" } : u)))
       } catch (err) {

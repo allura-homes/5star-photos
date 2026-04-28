@@ -12,10 +12,9 @@ import Image from "next/image"
 // Example: if (!user?.isAdmin) redirect('/');
 
 const MODEL_LABELS: Record<ModelProvider, string> = {
-  openai_1_5: "V1 (GPT Image 1.5)",
+  openai_1_5: "V1 (GPT Image)",
   nano_banana_pro: "V2 (Nano Banana)",
   flux_2_pro: "V3 (FLUX.2 Pro)",
-  openai_2: "V4 (GPT Image 2)",
   openai: "GPT Image 1 (Deprecated)",
   openai_mini: "GPT Mini (Deprecated)",
 }
@@ -24,7 +23,6 @@ const MODEL_COLORS: Record<ModelProvider, string> = {
   openai_1_5: "#74AA9C",
   nano_banana_pro: "#FF6B35",
   flux_2_pro: "#8B5CF6",
-  openai_2: "#10B981",
   openai: "#999999",
   openai_mini: "#666666",
 }
