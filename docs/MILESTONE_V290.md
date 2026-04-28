@@ -44,7 +44,7 @@ This milestone marks the successful implementation of a four-model comparison sy
 
 ### Model Provider Configuration
 
-```typescript
+\`\`\`typescript
 // lib/types.ts
 export type ModelProvider = 'nano_banana' | 'openai' | 'openai_mini' | 'openai_1_5'
 
@@ -58,7 +58,7 @@ const PROVIDERS: {
   { provider: 'openai_mini', variation_number: 3 },
   { provider: 'openai_1_5', variation_number: 4 },
 ]
-```
+\`\`\`
 
 ### API Route Structure
 
@@ -110,7 +110,7 @@ All models use strict constraints to prevent hallucinations:
 **Problem**: `e.getAll is not a function` when uploading to Supabase storage  
 **Solution**: Switched from `createServerClient` (@supabase/ssr) to `createClient` (@supabase/supabase-js) for storage operations, as the SSR client has FormData handling issues
 
-```typescript
+\`\`\`typescript
 // lib/actions/job-actions.ts
 import { createClient as createStorageClient } from '@supabase/supabase-js'
 
@@ -118,32 +118,32 @@ const storageClient = createStorageClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-```
+\`\`\`
 
 ### 2. Profile Fetch Error
 **Problem**: "Cannot coerce the result to a single JSON object"  
 **Solution**: Changed from `.single()` to `.maybeSingle()` in profile queries to handle edge cases gracefully
 
-```typescript
+\`\`\`typescript
 // lib/hooks/use-auth.ts
 const { data: profile } = await supabase
   .from('profiles')
   .select('*')
   .eq('id', userId)
   .maybeSingle() // Changed from .single()
-```
+\`\`\`
 
 ### 3. Middleware Supabase Error
 **Problem**: "Your project's URL and Key are required to create a Supabase client"  
 **Solution**: Added environment variable guards in proxy to gracefully handle missing credentials
 
-```typescript
+\`\`\`typescript
 // lib/supabase/proxy.ts
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || 
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
   return NextResponse.next()
 }
-```
+\`\`\`
 
 ### 4. Upload Card Props Mismatch
 **Problem**: `onFilesChange is not a function` after V289 rollback  
@@ -156,7 +156,7 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL ||
 ## Database Schema Updates
 
 ### New Provider Types
-```sql
+\`\`\`sql
 -- scripts/010_update_model_feedback_providers.sql
 ALTER TABLE model_feedback 
   DROP CONSTRAINT IF EXISTS model_feedback_provider_check;
@@ -164,7 +164,7 @@ ALTER TABLE model_feedback
 ALTER TABLE model_feedback 
   ADD CONSTRAINT model_feedback_provider_check 
   CHECK (provider IN ('nano_banana', 'openai', 'openai_mini', 'openai_1_5'));
-```
+\`\`\`
 
 ## Environment Variables
 

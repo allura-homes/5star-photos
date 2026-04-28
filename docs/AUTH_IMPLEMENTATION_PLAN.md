@@ -20,7 +20,7 @@ This document outlines the implementation plan for user accounts, authentication
 
 ### New Tables Required
 
-```sql
+\`\`\`sql
 -- 1. User Profiles (extends Supabase auth.users)
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -49,16 +49,16 @@ create table public.token_transactions (
 alter table public.jobs add column user_id uuid references public.profiles(id);
 alter table public.jobs add column is_watermarked boolean default true;
 alter table public.jobs add column tokens_charged integer default 0;
-```
+\`\`\`
 
 ### RLS Policies
 
-```sql
+\`\`\`sql
 -- Profiles: users can read/update their own profile
 -- Admins can read all profiles
 -- Token transactions: users can read their own, admins can read all
 -- Jobs: users can see their own jobs, viewers can see shared jobs
-```
+\`\`\`
 
 ---
 
@@ -66,16 +66,16 @@ alter table public.jobs add column tokens_charged integer default 0;
 
 ### Phase 1: Upload Trigger
 
-```
+\`\`\`
 1. User lands on homepage
 2. User uploads 1-3 images (drag & drop or file picker)
 3. Files are validated client-side (size, type, count)
 4. BEFORE sending to models → Show Liquid Glass Login Modal
-```
+\`\`\`
 
 ### Phase 2: Authentication Modal
 
-```
+\`\`\`
 ┌─────────────────────────────────────────────┐
 │                                             │
 │     [Liquid Glass Modal]                    │
@@ -96,11 +96,11 @@ alter table public.jobs add column tokens_charged integer default 0;
 │     Skip for now (3 free previews)          │
 │                                             │
 └─────────────────────────────────────────────┘
-```
+\`\`\`
 
 ### Phase 3: Post-Authentication
 
-```
+\`\`\`
 IF authenticated as User:
   → Send images to models
   → Generate 1024x768 NON-watermarked previews
@@ -111,7 +111,7 @@ IF skipped (Viewer mode):
   → Send images to models
   → Generate 1024x768 WATERMARKED previews
   → Show results with "Create account to download" CTA
-```
+\`\`\`
 
 ---
 
@@ -193,7 +193,7 @@ IF skipped (Viewer mode):
 
 ## File Structure (New Files)
 
-```
+\`\`\`
 app/
 ├── auth/
 │   ├── callback/route.ts      # OAuth callback handler
@@ -229,7 +229,7 @@ scripts/
 ├── 011_create_token_transactions.sql
 ├── 012_update_jobs_user_id.sql
 └── 013_rls_policies.sql
-```
+\`\`\`
 
 ---
 
