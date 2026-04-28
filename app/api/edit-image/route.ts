@@ -101,10 +101,8 @@ async function generateOpenAIImage(originalUrl: string, imagePrompt: string, mod
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error("OpenAI API key not configured")
   
-  // gpt-image-1.5 has much lower IPM limits (5/min at Tier 1), so we need longer delays
-  const is15Model = model === "gpt-image-1.5"
-  const MAX_RETRIES = is15Model ? 3 : 5 // Fewer retries for 1.5 to fail faster
-  const BASE_DELAY = is15Model ? 12000 : 3000 // 12 seconds base for 1.5 due to 5 IPM limit
+  const MAX_RETRIES = 5
+  const BASE_DELAY = 3000 // 3 seconds
 
   const isMiniModel = model === "gpt-image-1-mini"
   
@@ -1019,6 +1017,26 @@ export async function POST(req: Request) {
           })
         } catch (err) {
           console.error(`[v0] OpenAI GPT Image 1.5 failed:`, err)
+          throw err
+        }
+      } else if (provider === "openai_2") {
+        console.log(`[v0] Calling OpenAI GPT Image 2 (v${variation_number})`)
+        try {
+          const openai2ImageUrl = await generateOpenAIImage(original_url, promptToUse, "gpt-image-2")
+          console.log(
+            "[v0] OpenAI 2 returned URL type:",
+            openai2ImageUrl?.startsWith("data:") ? "base64" : "url",
+            "length:",
+            openai2ImageUrl?.length,
+          )
+          return Response.json({
+            url: openai2ImageUrl,
+            filename: `${filename}-openai-2-v${variation_number}`,
+            variation_number,
+            needs_watermark: apply_watermark,
+          })
+        } catch (err) {
+          console.error(`[v0] OpenAI GPT Image 2 failed:`, err)
           throw err
         }
       } else if (provider === "nano_banana" || provider === "nano_banana_pro" || provider === "gemini_3_pro") {
