@@ -961,17 +961,33 @@ export default function TransformPage() {
           isOpen={showDownloadModal}
           onClose={() => setShowDownloadModal(false)}
           originalFilename={image.original_filename}
-          variations={previews
-            .filter(p => p.preview_url)
-            .map((p, i) => {
-              const modelConfig = MODEL_CONFIG.find(m => m.model === p.model)
-              return {
-                id: `preview-${i}`,
-                preview_url: p.preview_url!,
-                sourceModel: p.model,
-                modelLabel: modelConfig?.label || p.model,
-              }
-            })}
+          preSelectedId={selectedPreview ? `preview-${selectedPreviewIndex}` : undefined}
+          variations={[
+            // Current previews (unsaved)
+            ...previews
+              .filter(p => p.preview_url)
+              .map((p, i) => {
+                const modelConfig = MODEL_CONFIG.find(m => m.model === p.model)
+                return {
+                  id: `preview-${i}`,
+                  preview_url: p.preview_url!,
+                  sourceModel: p.model,
+                  modelLabel: `${modelConfig?.label || p.model} (Current)`,
+                }
+              }),
+            // Saved variations
+            ...(image.variations || [])
+              .filter(v => v.storage_path)
+              .map(v => {
+                const modelConfig = MODEL_CONFIG.find(m => m.model === v.source_model)
+                return {
+                  id: v.id,
+                  preview_url: v.storage_path,
+                  sourceModel: v.source_model || "unknown",
+                  modelLabel: `${modelConfig?.label || v.source_model || "Saved"} (Saved)`,
+                }
+              }),
+          ]}
         />
       )}
     </div>
