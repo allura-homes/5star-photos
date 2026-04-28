@@ -101,8 +101,10 @@ async function generateOpenAIImage(originalUrl: string, imagePrompt: string, mod
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error("OpenAI API key not configured")
   
-  const MAX_RETRIES = 5
-  const BASE_DELAY = 3000 // 3 seconds
+  // gpt-image-1.5 has much lower IPM limits (5/min at Tier 1), so we need longer delays
+  const is15Model = model === "gpt-image-1.5"
+  const MAX_RETRIES = is15Model ? 3 : 5 // Fewer retries for 1.5 to fail faster
+  const BASE_DELAY = is15Model ? 12000 : 3000 // 12 seconds base for 1.5 due to 5 IPM limit
 
   const isMiniModel = model === "gpt-image-1-mini"
   
@@ -294,7 +296,13 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
         throw new Error("GPT Image is temporarily unavailable (OpenAI quota exceeded). Please try again later or use other models.")
       }
       
-      console.error(`[v0] OpenAI ${model} response error (${response.status}):`, errorText.substring(0, 200))
+      // Handle content policy errors - these won't succeed on retry
+      if (errorText.includes("content_policy") || errorText.includes("safety") || errorText.includes("moderation")) {
+        console.log(`[v0] OpenAI ${model}: Content policy rejection - ${errorText.substring(0, 150)}`)
+        throw new Error("Image content was flagged by safety filters. Please try a different image or prompt.")
+      }
+      
+      console.error(`[v0] OpenAI ${model} response error (${response.status}):`, errorText.substring(0, 300))
       
       // Handle rate limiting with retry
       if (response.status === 429 && retryCount < MAX_RETRIES) {
@@ -995,19 +1003,24 @@ export async function POST(req: Request) {
         }
       } else if (provider === "openai_1_5") {
         console.log(`[v0] Calling OpenAI GPT Image 1.5 (v${variation_number})`)
-        const openai15ImageUrl = await generateOpenAIImage(original_url, promptToUse, "gpt-image-1.5")
-        console.log(
-          "[v0] OpenAI 1.5 returned URL type:",
-          openai15ImageUrl?.startsWith("data:") ? "base64" : "url",
-          "length:",
-          openai15ImageUrl?.length,
-        )
-        return Response.json({
-          url: openai15ImageUrl,
-          filename: `${filename}-openai-1.5-v${variation_number}`,
-          variation_number,
-          needs_watermark: apply_watermark,
-        })
+        try {
+          const openai15ImageUrl = await generateOpenAIImage(original_url, promptToUse, "gpt-image-1.5")
+          console.log(
+            "[v0] OpenAI 1.5 returned URL type:",
+            openai15ImageUrl?.startsWith("data:") ? "base64" : "url",
+            "length:",
+            openai15ImageUrl?.length,
+          )
+          return Response.json({
+            url: openai15ImageUrl,
+            filename: `${filename}-openai-1.5-v${variation_number}`,
+            variation_number,
+            needs_watermark: apply_watermark,
+          })
+        } catch (err) {
+          console.error(`[v0] OpenAI GPT Image 1.5 failed:`, err)
+          throw err
+        }
       } else if (provider === "nano_banana" || provider === "nano_banana_pro" || provider === "gemini_3_pro") {
         console.log(`[v0] Calling Nano Banana Pro / Gemini 3 Pro (v${variation_number})`)
         try {
