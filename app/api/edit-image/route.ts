@@ -936,6 +936,7 @@ export async function POST(req: Request) {
       "openai",
       "openai_mini",
       "openai_1_5",
+      "openai_2",
       "nano_banana",
       "nano_banana_pro",
       "gemini",
