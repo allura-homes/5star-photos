@@ -23,20 +23,20 @@ This caused early versions to add pools, hot tubs, and furniture to photos that 
 Every enhancement instruction must be conditional - only apply if the element exists.
 
 ### Bad Pattern (Prescriptive)
-```
+\`\`\`
 Enhance the pool water to crystal clear turquoise.
 Make the lawn lush and green.
 Clean up the driveway.
-```
+\`\`\`
 
 This assumes pools, lawns, and driveways exist. If they don't, models may add them.
 
 ### Good Pattern (Conditional)
-```
+\`\`\`
 [Only if visible] If there is a pool, maintain its exact shape and enhance water clarity.
 [Only if visible] If there is a lawn, fill in any bare patches with matching grass.
 [Only if visible] If there is a driveway, preserve its exact location and material.
-```
+\`\`\`
 
 ---
 
@@ -99,9 +99,9 @@ Models sometimes "clean up" backgrounds by removing neighbor homes visible behin
 
 ### Solution
 The Art Director must explicitly describe background elements:
-```
+\`\`\`
 Preserve the [color] neighbor home visible behind the wooden fence on the [left/right] side.
-```
+\`\`\`
 
 ---
 
@@ -120,7 +120,7 @@ Before finalizing a prompt, verify:
 
 ## Prompt Structure Template
 
-```
+\`\`\`
 ## SCENE DESCRIPTION
 [Describe exactly what's in the photo - interior/exterior, room type, key features]
 
@@ -142,7 +142,7 @@ Before finalizing a prompt, verify:
 
 ## PHOTOREALISM REMINDER
 Maintain natural, professional real estate photography look. Avoid over-saturation.
-```
+\`\`\`
 
 ---
 

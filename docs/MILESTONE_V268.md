@@ -50,7 +50,7 @@ V268 represents a stable checkpoint where the core 5star.photos functionality is
 
 ## Architecture
 
-```
+\`\`\`
 User Upload → Supabase Storage (original)
            → Art Director AI (GPT-4o-mini analyzes image)
            → Custom prompt generated
@@ -59,7 +59,7 @@ User Upload → Supabase Storage (original)
            → Apply Cloudinary watermark to storage URLs
            → Save to job.file_list.variations
            → Display in preview comparison UI
-```
+\`\`\`
 
 ## Environment Variables Required
 

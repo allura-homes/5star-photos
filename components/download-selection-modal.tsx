@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import { X, Download, Check, Loader2, CheckCircle2 } from "lucide-react"
 
@@ -16,6 +16,7 @@ interface DownloadSelectionModalProps {
   onClose: () => void
   variations: DownloadableVariation[]
   originalFilename: string
+  preSelectedId?: string // ID of the variation to pre-select (currently being viewed)
 }
 
 export function DownloadSelectionModal({
@@ -23,13 +24,32 @@ export function DownloadSelectionModal({
   onClose,
   variations,
   originalFilename,
+  preSelectedId,
 }: DownloadSelectionModalProps) {
   // Filter out variations without valid URLs
   const validVariations = variations.filter(v => v.preview_url && v.preview_url.length > 0)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(validVariations.map(v => v.id)))
+  
+  // Initialize selection - if preSelectedId is provided, only select that one
+  // Otherwise select all
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<Record<string, "pending" | "downloading" | "complete" | "error">>({})
   const [currentDownload, setCurrentDownload] = useState<string | null>(null)
+  const [downloadFormat, setDownloadFormat] = useState<"png" | "jpg">("png")
+
+  // Reset selection when modal opens or preSelectedId changes
+  useEffect(() => {
+    if (isOpen) {
+      if (preSelectedId && validVariations.some(v => v.id === preSelectedId)) {
+        setSelectedIds(new Set([preSelectedId]))
+      } else if (validVariations.length > 0) {
+        // Default to first variation if no pre-selection
+        setSelectedIds(new Set([validVariations[0].id]))
+      }
+      setDownloadProgress({})
+      setIsDownloading(false)
+    }
+  }, [isOpen, preSelectedId, validVariations.length])
 
   if (!isOpen) return null
 
@@ -87,17 +107,40 @@ export function DownloadSelectionModal({
       const response = await fetch(downloadUrl)
       if (!response.ok) throw new Error("Failed to fetch image")
       
-      const blob = await response.blob()
+      let blob = await response.blob()
+      
+      // Convert to JPG if requested (for smaller file size)
+      if (downloadFormat === "jpg" && blob.type === "image/png") {
+        try {
+          const imageBitmap = await createImageBitmap(blob)
+          const canvas = document.createElement("canvas")
+          canvas.width = imageBitmap.width
+          canvas.height = imageBitmap.height
+          const ctx = canvas.getContext("2d")
+          if (ctx) {
+            ctx.drawImage(imageBitmap, 0, 0)
+            const jpgBlob = await new Promise<Blob | null>((resolve) => {
+              canvas.toBlob(resolve, "image/jpeg", 0.92)
+            })
+            if (jpgBlob) {
+              blob = jpgBlob
+            }
+          }
+        } catch (convertError) {
+          console.warn("[v0] JPG conversion failed, using original format:", convertError)
+        }
+      }
       
       // Create download link
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = url
       
-      // Generate filename: originalname_modelname_hires.png
+      // Generate filename: originalname_modelname_hires.png/jpg
       const baseName = (originalFilename || "image").replace(/\.[^/.]+$/, "")
       const modelName = (variation.modelLabel || "unknown").replace(/\s+/g, "_").toLowerCase()
-      link.download = `${baseName}_${modelName}_hires.png`
+      const extension = downloadFormat === "jpg" ? "jpg" : "png"
+      link.download = `${baseName}_${modelName}_hires.${extension}`
       
       document.body.appendChild(link)
       link.click()
@@ -206,84 +249,132 @@ export function DownloadSelectionModal({
         
         {/* Variations grid */}
         <div className="p-5 max-h-[400px] overflow-y-auto">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {validVariations.map((variation) => {
-              const isSelected = selectedIds.has(variation.id)
-              const status = downloadProgress[variation.id]
-              
-              return (
-                <div
-                  key={variation.id}
-                  onClick={() => !isDownloading && toggleSelection(variation.id)}
-                  className={`relative rounded-xl overflow-hidden cursor-pointer transition-all ${
-                    isDownloading ? "cursor-default" : "hover:scale-[1.02]"
-                  } ${
-                    isSelected 
-                      ? "ring-2 ring-fuchsia-500 ring-offset-2 ring-offset-slate-900" 
-                      : "opacity-60"
-                  }`}
-                >
-                  <div className="relative aspect-[4/3]">
-                    <Image
-                      src={variation.preview_url}
-                      alt={variation.modelLabel}
-                      fill
-                      className="object-cover"
-                    />
-                    
-                    {/* Selection checkbox */}
-                    <div className={`absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+          {validVariations.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-slate-400">No variations available to download.</p>
+              <p className="text-sm text-slate-500 mt-2">Generate and save some variations first.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {validVariations.map((variation) => {
+                const isSelected = selectedIds.has(variation.id)
+                const status = downloadProgress[variation.id]
+                const isPreSelected = variation.id === preSelectedId
+                
+                return (
+                  <div
+                    key={variation.id}
+                    onClick={() => !isDownloading && toggleSelection(variation.id)}
+                    className={`relative rounded-xl overflow-hidden cursor-pointer transition-all ${
+                      isDownloading ? "cursor-default" : "hover:scale-[1.02]"
+                    } ${
                       isSelected 
-                        ? "bg-fuchsia-500" 
-                        : "bg-black/50 border border-white/30"
-                    }`}>
-                      {isSelected && <Check className="w-4 h-4 text-white" />}
+                        ? "ring-2 ring-fuchsia-500 ring-offset-2 ring-offset-slate-900" 
+                        : "opacity-60"
+                    }`}
+                  >
+                    <div className="relative aspect-[4/3]">
+                      <Image
+                        src={variation.preview_url}
+                        alt={variation.modelLabel}
+                        fill
+                        className="object-cover"
+                      />
+                      
+                      {/* Selection checkbox */}
+                      <div className={`absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                        isSelected 
+                          ? "bg-fuchsia-500" 
+                          : "bg-black/50 border border-white/30"
+                      }`}>
+                        {isSelected && <Check className="w-4 h-4 text-white" />}
+                      </div>
+                      
+                      {/* Pre-selected badge */}
+                      {isPreSelected && (
+                        <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-fuchsia-500/80 text-xs text-white font-medium">
+                          Current
+                        </div>
+                      )}
+                      
+                      {/* Download status overlay */}
+                      {status && (
+                        <div className={`absolute inset-0 flex items-center justify-center ${
+                          status === "downloading" ? "bg-black/60" :
+                          status === "complete" ? "bg-green-500/30" :
+                          status === "error" ? "bg-red-500/30" :
+                          "bg-black/40"
+                        }`}>
+                          {status === "downloading" && (
+                            <Loader2 className="w-8 h-8 text-white animate-spin" />
+                          )}
+                          {status === "complete" && (
+                            <CheckCircle2 className="w-8 h-8 text-green-400" />
+                          )}
+                        </div>
+                      )}
                     </div>
                     
-                    {/* Download status overlay */}
-                    {status && (
-                      <div className={`absolute inset-0 flex items-center justify-center ${
-                        status === "downloading" ? "bg-black/60" :
-                        status === "complete" ? "bg-green-500/30" :
-                        status === "error" ? "bg-red-500/30" :
-                        "bg-black/40"
-                      }`}>
-                        {status === "downloading" && (
-                          <Loader2 className="w-8 h-8 text-white animate-spin" />
-                        )}
-                        {status === "complete" && (
-                          <CheckCircle2 className="w-8 h-8 text-green-400" />
-                        )}
-                      </div>
-                    )}
+                    {/* Label */}
+                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                      <p className="text-sm font-medium text-white truncate">
+                        {variation.modelLabel}
+                      </p>
+                    </div>
                   </div>
-                  
-                  {/* Label */}
-                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                    <p className="text-sm font-medium text-white truncate">
-                      {variation.modelLabel}
-                    </p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
         
         {/* Footer */}
         <div className="flex items-center justify-between p-5 border-t border-white/10 bg-white/5">
-          {isDownloading ? (
-            <div className="flex items-center gap-3">
-              <Loader2 className="w-5 h-5 text-fuchsia-400 animate-spin" />
-              <span className="text-white">
-                Downloading {completedCount + 1} of {selectedIds.size}...
-              </span>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">
-              High-resolution images without watermarks
-            </p>
-          )}
+          <div className="flex flex-col gap-2">
+            {isDownloading ? (
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-fuchsia-400 animate-spin" />
+                <span className="text-white">
+                  Downloading {completedCount + 1} of {selectedIds.size}...
+                </span>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-slate-400">
+                  High-resolution images without watermarks
+                </p>
+                {/* Format toggle */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Format:</span>
+                  <div className="flex rounded-lg overflow-hidden border border-white/10">
+                    <button
+                      onClick={() => setDownloadFormat("png")}
+                      className={`px-3 py-1 text-xs font-medium transition-colors ${
+                        downloadFormat === "png" 
+                          ? "bg-fuchsia-500 text-white" 
+                          : "bg-white/5 text-slate-400 hover:bg-white/10"
+                      }`}
+                    >
+                      PNG
+                    </button>
+                    <button
+                      onClick={() => setDownloadFormat("jpg")}
+                      className={`px-3 py-1 text-xs font-medium transition-colors ${
+                        downloadFormat === "jpg" 
+                          ? "bg-fuchsia-500 text-white" 
+                          : "bg-white/5 text-slate-400 hover:bg-white/10"
+                      }`}
+                    >
+                      JPG
+                    </button>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    {downloadFormat === "jpg" ? "(Smaller file)" : "(Best quality)"}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
           
           <div className="flex items-center gap-3">
             {!isDownloading && (

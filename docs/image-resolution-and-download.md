@@ -14,9 +14,9 @@ This document describes how each image generation model produces images and how 
 - **Quality:** High fidelity, excellent lighting
 - **Location:** `/app/api/edit-image/route.ts` (OpenAI generation block)
 
-```typescript
+\`\`\`typescript
 size: "1536x1024"
-```
+\`\`\`
 
 ### V2 (Nano Banana / Google Gemini)
 - **Resolution:** Variable (Gemini auto-selects based on input)
@@ -31,13 +31,13 @@ size: "1536x1024"
 - **Quality:** Good detail, requires enhanced lighting instructions
 - **Location:** `/app/api/edit-image/route.ts` (FLUX generation block)
 
-```typescript
+\`\`\`typescript
 image_size: {
   width: 1536,
   height: 1024,
 },
 output_format: "png"
-```
+\`\`\`
 
 ---
 
@@ -60,22 +60,22 @@ When a user clicks "Download Hi-Res", the system:
 **Location:** `/app/api/upscale/route.ts`
 
 **Request:**
-```typescript
+\`\`\`typescript
 POST /api/upscale
 {
   "imageUrl": "https://...",  // URL of image to upscale
   "scale": 2                   // Upscale factor (2x default)
 }
-```
+\`\`\`
 
 **Response:**
-```typescript
+\`\`\`typescript
 {
   "url": "https://...",        // URL of upscaled image
   "width": 3072,               // New dimensions
   "height": 2048
 }
-```
+\`\`\`
 
 **Technology:** Uses fal.ai's ESRGAN model (`fal-ai/esrgan`) for high-quality upscaling.
 
