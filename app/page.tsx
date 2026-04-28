@@ -21,16 +21,42 @@ export default function Home() {
           </h1>
           <p className="text-3xl md:text-4xl lg:text-5xl font-bold text-amber-400 mb-8">5-Star Conversion Magnets</p>
 
-          <div className="mb-6 max-w-4xl mx-auto">
-            <div className="aspect-[4/3] w-full">
-              <BeforeAfterSlider
-                beforeImage="/images/before.jpeg"
-                afterImage="/images/after.png"
-                beforeAlt="Bathroom before enhancement"
-                afterAlt="Bathroom after 5star.photos enhancement"
-              />
+          <div className="mb-6 max-w-6xl mx-auto">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
+                <BeforeAfterSlider
+                  beforeImage="/images/hero/living1-before.jpg"
+                  afterImage="/images/hero/living1-after.jpg"
+                  beforeAlt="Living room before enhancement"
+                  afterAlt="Living room after 5star.photos enhancement"
+                />
+              </div>
+              <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
+                <BeforeAfterSlider
+                  beforeImage="/images/hero/garden-before.jpg"
+                  afterImage="/images/hero/garden-after.jpg"
+                  beforeAlt="Garden before enhancement"
+                  afterAlt="Garden after 5star.photos enhancement"
+                />
+              </div>
+              <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
+                <BeforeAfterSlider
+                  beforeImage="/images/hero/bedroom2-before.jpg"
+                  afterImage="/images/hero/bedroom2-after.jpg"
+                  beforeAlt="Bedroom before enhancement"
+                  afterAlt="Bedroom after 5star.photos enhancement"
+                />
+              </div>
+              <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
+                <BeforeAfterSlider
+                  beforeImage="/images/before.jpeg"
+                  afterImage="/images/after.png"
+                  beforeAlt="Bathroom before enhancement"
+                  afterAlt="Bathroom after 5star.photos enhancement"
+                />
+              </div>
             </div>
-            <p className="text-sm text-[#C9CCDA] mt-4">Drag the slider to see the difference</p>
+            <p className="text-sm text-[#C9CCDA] mt-4">Drag the sliders to see the difference</p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
