@@ -21,13 +21,14 @@ export default function Home() {
           </h1>
           <p className="text-3xl md:text-4xl lg:text-5xl font-bold text-amber-400 mb-8">5-Star Conversion Magnets</p>
 
-          <div className="mb-6 max-w-4xl mx-auto">
-            <div className="aspect-[4/3] w-full">
+          <div className="mb-6 max-w-5xl mx-auto">
+            {/* Main hero slider */}
+            <div className="aspect-[3/2] w-full rounded-2xl overflow-hidden">
               <BeforeAfterSlider
-                beforeImage="/images/before.jpeg"
-                afterImage="/images/after.png"
-                beforeAlt="Bathroom before enhancement"
-                afterAlt="Bathroom after 5star.photos enhancement"
+                beforeImage="/images/hero/pool-before.jpg"
+                afterImage="/images/hero/pool-after.jpg"
+                beforeAlt="Pool area before enhancement"
+                afterAlt="Pool area after 5star.photos enhancement"
               />
             </div>
             <p className="text-sm text-[#C9CCDA] mt-4">Drag the slider to see the difference</p>
@@ -71,7 +72,7 @@ export default function Home() {
       </section>
 
       <section className="py-20 px-6" id="examples">
-        <div className="max-w-5xl mx-auto text-center mb-16">
+        <div className="max-w-5xl mx-auto text-center mb-12">
           <h2 className="text-5xl md:text-6xl font-bold text-white mb-6 text-balance">
             Your Photos Are 90% of Your Airbnb Success. Make Them Look UNDENIABLE.
           </h2>
@@ -79,6 +80,45 @@ export default function Home() {
             5star.photos gives your listing the visual polish of a pro photographer — without the shoot, the scheduling,
             or the expense.
           </p>
+        </div>
+
+        {/* 2x2 grid of before/after examples */}
+        <div className="max-w-5xl mx-auto mb-16">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
+              <BeforeAfterSlider
+                beforeImage="/images/hero/living1-before.jpg"
+                afterImage="/images/hero/living1-after.jpg"
+                beforeAlt="Living room before enhancement"
+                afterAlt="Living room after 5star.photos enhancement"
+              />
+            </div>
+            <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
+              <BeforeAfterSlider
+                beforeImage="/images/hero/garden-before.jpg"
+                afterImage="/images/hero/garden-after.jpg"
+                beforeAlt="Garden before enhancement"
+                afterAlt="Garden after 5star.photos enhancement"
+              />
+            </div>
+            <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
+              <BeforeAfterSlider
+                beforeImage="/images/hero/bedroom2-before.jpg"
+                afterImage="/images/hero/bedroom2-after.jpg"
+                beforeAlt="Bedroom before enhancement"
+                afterAlt="Bedroom after 5star.photos enhancement"
+              />
+            </div>
+            <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
+              <BeforeAfterSlider
+                beforeImage="/images/before.jpeg"
+                afterImage="/images/after.png"
+                beforeAlt="Bathroom before enhancement"
+                afterAlt="Bathroom after 5star.photos enhancement"
+              />
+            </div>
+          </div>
+          <p className="text-sm text-[#C9CCDA] mt-4 text-center">Drag the sliders to see the difference</p>
         </div>
 
         <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8">

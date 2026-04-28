@@ -49,7 +49,6 @@ const MODEL_CONFIG: { model: ModelProvider; label: string }[] = [
   { model: "openai_1_5", label: "V1" },
   { model: "nano_banana_pro", label: "V2" },
   { model: "flux_2_pro", label: "V3" },
-  { model: "openai_2", label: "V4" },
 ]
 
 export default function TransformPage() {
