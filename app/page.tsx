@@ -21,8 +21,19 @@ export default function Home() {
           </h1>
           <p className="text-3xl md:text-4xl lg:text-5xl font-bold text-amber-400 mb-8">5-Star Conversion Magnets</p>
 
-          <div className="mb-6 max-w-6xl mx-auto">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="mb-6 max-w-5xl mx-auto">
+            {/* Main hero slider */}
+            <div className="aspect-[3/2] w-full rounded-2xl overflow-hidden mb-4">
+              <BeforeAfterSlider
+                beforeImage="/images/hero/pool-before.jpg"
+                afterImage="/images/hero/pool-after.jpg"
+                beforeAlt="Pool area before enhancement"
+                afterAlt="Pool area after 5star.photos enhancement"
+              />
+            </div>
+            
+            {/* 2x2 grid of additional examples */}
+            <div className="grid grid-cols-2 gap-3 max-w-3xl mx-auto">
               <div className="aspect-[4/3] w-full rounded-xl overflow-hidden">
                 <BeforeAfterSlider
                   beforeImage="/images/hero/living1-before.jpg"
