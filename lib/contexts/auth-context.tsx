@@ -15,7 +15,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const auth = useAuth()
 
-  // Set up global error handler for unhandled auth errors (like refresh token failures)
+  // Set up global error handler for unhandled auth errors
   useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       const error = event.reason
@@ -27,11 +27,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         message.includes("Invalid Refresh Token") ||
         message.includes("Refresh Token Not Found")
       ) {
-        event.preventDefault() // Prevent the error from showing in console
+        event.preventDefault()
         console.log("[v0] Caught refresh token error, clearing session")
         clearAuthState()
-        // Reload to get a fresh state
         window.location.reload()
+        return
+      }
+      
+      // Catch network errors from Supabase auth - these are transient
+      if (
+        message.includes("Failed to fetch") &&
+        (message.includes("@supabase") || event.reason?.stack?.includes("supabase"))
+      ) {
+        event.preventDefault()
+        // Don't reload - just let the app continue in unauthenticated state
+        // The user can try again or the auth will recover on next page load
+        console.log("[v0] Network error during auth, continuing in unauthenticated state")
+        return
       }
     }
 
