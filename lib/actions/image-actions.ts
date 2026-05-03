@@ -164,9 +164,10 @@ async function uploadToStorage(base64Data: string, storagePath: string, contentT
     throw new Error("Missing Supabase configuration")
   }
 
-  // Convert base64 to Buffer
+  // Convert base64 to Uint8Array (more compatible with fetch in server actions)
   const buffer = Buffer.from(base64Data, "base64")
-  console.log("[v0] uploadToStorage: Buffer size:", buffer.length, "bytes, content type:", contentType)
+  const uint8Array = new Uint8Array(buffer)
+  console.log("[v0] uploadToStorage: Buffer size:", uint8Array.length, "bytes, content type:", contentType)
 
   // Normalize and validate content type - Supabase is strict about MIME types
   const validMimeTypes: Record<string, string> = {
@@ -202,7 +203,7 @@ async function uploadToStorage(base64Data: string, storagePath: string, contentT
         "Content-Type": normalizedContentType,
         "x-upsert": "true",
       },
-      body: buffer,
+      body: uint8Array,
     })
 
     const responseText = await response.text()
