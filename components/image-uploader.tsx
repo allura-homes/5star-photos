@@ -134,22 +134,24 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
   }
 
   // Compress image to reduce file size for large uploads (Vercel has ~4.5MB limit)
-  async function compressImage(file: File, maxSizeMB: number = 2.5): Promise<string> {
+  async function compressImage(file: File, maxSizeMB: number = 2): Promise<string> {
     return new Promise((resolve, reject) => {
       const img = new window.Image()
       img.crossOrigin = "anonymous"
       
       img.onload = () => {
+        URL.revokeObjectURL(img.src) // Clean up object URL
+        
         const fileSizeMB = file.size / (1024 * 1024)
         let scale = 1
         
         // More aggressive scaling for larger files
         if (fileSizeMB > maxSizeMB) {
-          scale = Math.sqrt(maxSizeMB / fileSizeMB) * 0.9 // Extra 10% reduction
+          scale = Math.sqrt(maxSizeMB / fileSizeMB) * 0.85 // Extra 15% reduction for safety
         }
         
-        // Limit max dimensions to 3000px
-        const maxDim = 3000
+        // Limit max dimensions to 2500px (more conservative)
+        const maxDim = 2500
         if (img.width > maxDim || img.height > maxDim) {
           const dimScale = maxDim / Math.max(img.width, img.height)
           scale = Math.min(scale, dimScale)
@@ -168,14 +170,27 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
         
         // More aggressive quality for very large files
-        const quality = fileSizeMB > 8 ? 0.7 : fileSizeMB > 5 ? 0.75 : 0.8
+        const quality = fileSizeMB > 10 ? 0.65 : fileSizeMB > 5 ? 0.7 : 0.75
         const dataUrl = canvas.toDataURL("image/jpeg", quality)
         
-        console.log(`[v0] Compressed: ${img.width}x${img.height} -> ${canvas.width}x${canvas.height}, quality: ${quality}, ~${(dataUrl.length * 0.75 / 1024 / 1024).toFixed(2)}MB`)
-        resolve(dataUrl)
+        // Estimate actual size (base64 is ~33% larger than binary)
+        const estimatedSizeMB = (dataUrl.length * 0.75) / (1024 * 1024)
+        console.log(`[v0] Compressed: ${img.width}x${img.height} -> ${canvas.width}x${canvas.height}, quality: ${quality}, ~${estimatedSizeMB.toFixed(2)}MB`)
+        
+        // If still too large, try again with lower quality
+        if (estimatedSizeMB > 3.5) {
+          const lowerQualityDataUrl = canvas.toDataURL("image/jpeg", 0.6)
+          console.log(`[v0] Re-compressed with quality 0.6: ~${((lowerQualityDataUrl.length * 0.75) / (1024 * 1024)).toFixed(2)}MB`)
+          resolve(lowerQualityDataUrl)
+        } else {
+          resolve(dataUrl)
+        }
       }
       
-      img.onerror = () => reject(new Error("Failed to load image for compression"))
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src)
+        reject(new Error("Failed to load image for compression"))
+      }
       img.src = URL.createObjectURL(file)
     })
   }
@@ -200,12 +215,13 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
 
       try {
         // Compress large images before upload (Vercel serverless limit is ~4.5MB)
+        // Base64 encoding increases size by ~33%, so we need to compress earlier
         const fileSizeMB = upload.file.size / (1024 * 1024)
         let base64: string
         
-        if (fileSizeMB > 2.5) {
+        if (fileSizeMB > 1.5) {
           console.log(`[v0] Large file detected (${fileSizeMB.toFixed(2)}MB), compressing...`)
-          base64 = await compressImage(upload.file, 2.5)
+          base64 = await compressImage(upload.file, 2)
         } else {
           base64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader()

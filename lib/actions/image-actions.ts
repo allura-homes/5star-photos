@@ -192,65 +192,47 @@ async function uploadToStorage(base64Data: string, storagePath: string, contentT
   // Normalize the content type
   const normalizedContentType = validMimeTypes[contentType?.toLowerCase()] || extToMime[ext] || "image/jpeg"
 
-  const uploadPath = `/storage/v1/object/original-uploads/${storagePath}`
-  const hostname = new URL(supabaseUrl).hostname
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/original-uploads/${storagePath}`
 
-  return new Promise((resolve, reject) => {
-    import("https")
-      .then((https) => {
-        const options = {
-          hostname,
-          port: 443,
-          path: uploadPath,
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${serviceRoleKey}`,
-            "Content-Type": normalizedContentType,
-            "x-upsert": "true",
-            "Content-Length": buffer.length,
-          },
-        }
+  try {
+    const response = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": normalizedContentType,
+        "x-upsert": "true",
+      },
+      body: buffer,
+    })
 
-        const req = https.request(options, (res) => {
-          let data = ""
-          res.on("data", (chunk) => {
-            data += chunk
-          })
-          res.on("end", () => {
-            console.log("[v0] uploadToStorage: Response status:", res.statusCode, "data:", data?.substring(0, 200))
-            
-            // Check for error messages in response body (Vercel may return 200 with error in body)
-            const isPayloadTooLarge = data?.includes("FUNCTION_PAYLOAD_TOO_LARGE") || 
-                                       data?.includes("Request Entity Too Large") ||
-                                       data?.includes("PayloadTooLargeError")
-            
-            if (isPayloadTooLarge) {
-              console.error("[v0] uploadToStorage: File too large for serverless function")
-              reject(new Error("File is too large. Please use an image under 4MB or compress it before uploading."))
-              return
-            }
-            
-            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-              const publicUrl = `${supabaseUrl}/storage/v1/object/public/original-uploads/${storagePath}`
-              console.log("[v0] uploadToStorage: Success, URL:", publicUrl)
-              resolve(publicUrl)
-            } else {
-              console.error("[v0] uploadToStorage: Failed with status", res.statusCode, data)
-              reject(new Error(`Upload failed with status ${res.statusCode}: ${data}`))
-            }
-          })
-        })
+    const responseText = await response.text()
+    console.log("[v0] uploadToStorage: Response status:", response.status, "data:", responseText?.substring(0, 200))
 
-        req.on("error", (e) => {
-          console.error("[v0] uploadToStorage: Request error:", e)
-          reject(new Error(`Upload request failed: ${e.message}`))
-        })
+    // Check for error messages in response body
+    const isPayloadTooLarge = responseText?.includes("FUNCTION_PAYLOAD_TOO_LARGE") || 
+                               responseText?.includes("Request Entity Too Large") ||
+                               responseText?.includes("PayloadTooLargeError")
 
-        req.write(buffer)
-        req.end()
-      })
-      .catch(reject)
-  })
+    if (isPayloadTooLarge) {
+      console.error("[v0] uploadToStorage: File too large for serverless function")
+      throw new Error("File is too large. Please use an image under 4MB or compress it before uploading.")
+    }
+
+    if (response.ok) {
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/original-uploads/${storagePath}`
+      console.log("[v0] uploadToStorage: Success, URL:", publicUrl)
+      return publicUrl
+    } else {
+      console.error("[v0] uploadToStorage: Failed with status", response.status, responseText)
+      throw new Error(`Upload failed with status ${response.status}: ${responseText}`)
+    }
+  } catch (error) {
+    console.error("[v0] uploadToStorage: Request error:", error)
+    if (error instanceof Error) {
+      throw error
+    }
+    throw new Error(`Upload request failed: ${String(error)}`)
+  }
 }
 
 // Upload a new original image
