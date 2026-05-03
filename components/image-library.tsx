@@ -10,6 +10,19 @@ import type { UserImage, PhotoClassification, Project } from "@/lib/types"
 import { TOKEN_COSTS } from "@/lib/constants/tokens"
 import { v4 as uuidv4 } from "uuid"
 import { loadPendingFiles, clearPendingFiles } from "@/lib/pending-files-storage"
+
+// Model to user-friendly label mapping (matches transform page)
+const MODEL_LABELS: Record<string, string> = {
+  openai_1_5: "V1",
+  nano_banana_pro: "V2",
+  flux_2_pro: "V3",
+  openai_2: "V4",
+}
+
+function getModelLabel(sourceModel: string | null | undefined): string {
+  if (!sourceModel) return ""
+  return MODEL_LABELS[sourceModel] || sourceModel
+}
 import {
   Loader2,
   Upload,
@@ -30,6 +43,7 @@ import {
   Square,
   CheckSquare,
   Layers,
+  Download,
 } from "lucide-react"
 
 interface ImageLibraryProps {
@@ -84,11 +98,15 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
   const [projects, setProjects] = useState<Project[]>([])
   const [showProjectSubmenu, setShowProjectSubmenu] = useState<string | null>(null)
   
-  // Batch selection state
+  // Batch selection state for original images
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
   const [showBatchProjectMenu, setShowBatchProjectMenu] = useState(false)
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  
+  // Batch selection state for variations (transformed images)
+  const [selectedVariations, setSelectedVariations] = useState<Set<string>>(new Set())
+  const [isDownloadingVariations, setIsDownloadingVariations] = useState(false)
 
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([])
   const [isUploading, setIsUploading] = useState(false)
@@ -327,6 +345,79 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
   
   function clearSelection() {
     setSelectedImages(new Set())
+  }
+  
+  // Variation selection functions
+  function toggleVariationSelection(variationId: string, e: React.MouseEvent) {
+    e.stopPropagation() // Don't open the image
+    setSelectedVariations((prev) => {
+      const next = new Set(prev)
+      if (next.has(variationId)) {
+        next.delete(variationId)
+      } else {
+        next.add(variationId)
+      }
+      return next
+    })
+  }
+  
+  function clearVariationSelection() {
+    setSelectedVariations(new Set())
+  }
+  
+  async function handleDownloadSelectedVariations() {
+    if (selectedVariations.size === 0) return
+    
+    setIsDownloadingVariations(true)
+    
+    try {
+      // Get all variation data from images
+      const allVariations: { url: string; filename: string }[] = []
+      
+      for (const image of images) {
+        if (image.variations) {
+          for (const variation of image.variations) {
+            if (selectedVariations.has(variation.id)) {
+              const modelLabel = getModelLabel(variation.source_model)
+              const baseName = image.original_filename.replace(/\.[^.]+$/, '')
+              const filename = `${baseName}_${modelLabel}.jpg`
+              allVariations.push({
+                url: variation.storage_path,
+                filename
+              })
+            }
+          }
+        }
+      }
+      
+      // Download each file
+      for (const { url, filename } of allVariations) {
+        try {
+          const response = await fetch(url)
+          const blob = await response.blob()
+          const blobUrl = URL.createObjectURL(blob)
+          
+          const link = document.createElement('a')
+          link.href = blobUrl
+          link.download = filename
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          URL.revokeObjectURL(blobUrl)
+          
+          // Small delay between downloads
+          await new Promise(resolve => setTimeout(resolve, 300))
+        } catch (err) {
+          console.error(`Failed to download ${filename}:`, err)
+        }
+      }
+      
+      clearVariationSelection()
+    } catch (err) {
+      console.error('Download error:', err)
+    }
+    
+    setIsDownloadingVariations(false)
   }
   
   async function handleBatchAssignToProject(projectId: string | null) {
@@ -751,34 +842,51 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
               <div className="border-t border-white/10 bg-white/5 p-4 pl-16">
                 <p className="text-xs text-slate-500 font-medium mb-3">SAVED VARIATIONS</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {image.variations?.map((variation) => (
-                    <div
-                      key={variation.id}
-                      className="relative group cursor-pointer rounded-xl overflow-hidden bg-[#2B2A3A]"
-                      onClick={() => onSelectImage(variation)}
-                    >
-                      <div className="aspect-[4/3] relative">
-                        <Image
-                          src={variation.thumbnail_path || variation.storage_path}
-                          alt={`Variation of ${image.original_filename}`}
-                          fill
-                          className="object-cover group-hover:scale-105 transition-transform"
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                  {image.variations?.map((variation) => {
+                    const isSelected = selectedVariations.has(variation.id)
+                    return (
+                      <div
+                        key={variation.id}
+                        className={`relative group cursor-pointer rounded-xl overflow-hidden bg-[#2B2A3A] transition-all ${
+                          isSelected ? "ring-2 ring-fuchsia-500 ring-offset-2 ring-offset-[#1a1a2e]" : ""
+                        }`}
+                        onClick={() => onSelectImage(variation)}
+                      >
+                        <div className="aspect-[4/3] relative">
+                          <Image
+                            src={variation.thumbnail_path || variation.storage_path}
+                            alt={`Variation of ${image.original_filename}`}
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
 
-                        {variation.source_model && (
-                          <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white text-xs">
-                            {variation.source_model}
-                          </div>
-                        )}
+                          {/* Selection checkbox */}
+                          <button
+                            onClick={(e) => toggleVariationSelection(variation.id, e)}
+                            className={`absolute top-2 right-2 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all z-10 ${
+                              isSelected
+                                ? "bg-fuchsia-500 border-fuchsia-500 text-white"
+                                : "border-white/50 bg-black/30 hover:border-fuchsia-400 hover:bg-black/50"
+                            }`}
+                          >
+                            {isSelected && <Check className="w-4 h-4" />}
+                          </button>
+
+                          {variation.source_model && (
+                            <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white text-xs">
+                              {getModelLabel(variation.source_model)}
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-2">
+                          <p className="text-xs text-slate-400 truncate">
+                            {new Date(variation.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
-                      <div className="p-2">
-                        <p className="text-xs text-slate-400 truncate">
-                          {new Date(variation.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -942,6 +1050,47 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      
+      {/* Variation Selection Action Bar */}
+      {selectedVariations.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
+          <div className="glass-card-strong rounded-2xl px-6 py-4 flex items-center gap-4 shadow-2xl border border-white/20">
+            {/* Selection count */}
+            <div className="flex items-center gap-2 pr-4 border-r border-white/20">
+              <ImageIcon className="w-5 h-5 text-fuchsia-400" />
+              <span className="text-white font-medium">{selectedVariations.size} photo{selectedVariations.size !== 1 ? 's' : ''} selected</span>
+            </div>
+            
+            {/* Download button */}
+            <button
+              onClick={handleDownloadSelectedVariations}
+              disabled={isDownloadingVariations}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-magenta-violet text-white font-medium hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100"
+            >
+              {isDownloadingVariations ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download Selected
+                </>
+              )}
+            </button>
+            
+            {/* Clear Selection */}
+            <button
+              onClick={clearVariationSelection}
+              className="p-2 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+              title="Clear selection"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
       )}
