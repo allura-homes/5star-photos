@@ -157,8 +157,9 @@ export async function transformImage(
 
 async function uploadToStorage(base64Data: string, storagePath: string, contentType: string): Promise<string> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl) {
+  if (!supabaseUrl || !serviceRoleKey) {
     console.error("[v0] uploadToStorage: Missing Supabase configuration")
     throw new Error("Missing Supabase configuration")
   }
@@ -191,38 +192,65 @@ async function uploadToStorage(base64Data: string, storagePath: string, contentT
   // Normalize the content type
   const normalizedContentType = validMimeTypes[contentType?.toLowerCase()] || extToMime[ext] || "image/jpeg"
 
-  try {
-    // Use Supabase client for upload - it handles binary data properly in server actions
-    const supabase = await createServerSupabaseClient()
-    
-    const { data, error } = await supabase.storage
-      .from("original-uploads")
-      .upload(storagePath, buffer, {
-        contentType: normalizedContentType,
-        upsert: true,
+  const uploadPath = `/storage/v1/object/original-uploads/${storagePath}`
+  const hostname = new URL(supabaseUrl).hostname
+
+  return new Promise((resolve, reject) => {
+    import("https")
+      .then((https) => {
+        const options = {
+          hostname,
+          port: 443,
+          path: uploadPath,
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${serviceRoleKey}`,
+            "Content-Type": normalizedContentType,
+            "x-upsert": "true",
+            "Content-Length": buffer.length,
+          },
+        }
+
+        const req = https.request(options, (res) => {
+          let data = ""
+          res.on("data", (chunk) => {
+            data += chunk
+          })
+          res.on("end", () => {
+            console.log("[v0] uploadToStorage: Response status:", res.statusCode, "data:", data?.substring(0, 200))
+            
+            // Check for error messages in response body (Vercel may return 200 with error in body)
+            const isPayloadTooLarge = data?.includes("FUNCTION_PAYLOAD_TOO_LARGE") || 
+                                       data?.includes("Request Entity Too Large") ||
+                                       data?.includes("PayloadTooLargeError")
+            
+            if (isPayloadTooLarge) {
+              console.error("[v0] uploadToStorage: File too large for serverless function")
+              reject(new Error("File is too large. Please use an image under 4MB or compress it before uploading."))
+              return
+            }
+            
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              const publicUrl = `${supabaseUrl}/storage/v1/object/public/original-uploads/${storagePath}`
+              console.log("[v0] uploadToStorage: Success, URL:", publicUrl)
+              resolve(publicUrl)
+            } else {
+              console.error("[v0] uploadToStorage: Failed with status", res.statusCode, data)
+              reject(new Error(`Upload failed with status ${res.statusCode}: ${data}`))
+            }
+          })
+        })
+
+        req.on("error", (e) => {
+          console.error("[v0] uploadToStorage: Request error:", e)
+          reject(new Error(`Upload request failed: ${e.message}`))
+        })
+
+        req.write(buffer)
+        req.end()
       })
-
-    if (error) {
-      console.error("[v0] uploadToStorage: Supabase error:", error)
-      
-      // Check for payload too large errors
-      if (error.message?.includes("Payload too large") || error.message?.includes("413")) {
-        throw new Error("File is too large. Please use an image under 4MB or compress it before uploading.")
-      }
-      
-      throw new Error(`Upload failed: ${error.message}`)
-    }
-
-    const publicUrl = `${supabaseUrl}/storage/v1/object/public/original-uploads/${storagePath}`
-    console.log("[v0] uploadToStorage: Success, URL:", publicUrl)
-    return publicUrl
-  } catch (error) {
-    console.error("[v0] uploadToStorage: Request error:", error)
-    if (error instanceof Error) {
-      throw error
-    }
-    throw new Error(`Upload request failed: ${String(error)}`)
-  }
+      .catch(reject)
+  })
 }
 
 // Upload a new original image
