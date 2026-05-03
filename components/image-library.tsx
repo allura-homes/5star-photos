@@ -10,6 +10,19 @@ import type { UserImage, PhotoClassification, Project } from "@/lib/types"
 import { TOKEN_COSTS } from "@/lib/constants/tokens"
 import { v4 as uuidv4 } from "uuid"
 import { loadPendingFiles, clearPendingFiles } from "@/lib/pending-files-storage"
+
+// Model to user-friendly label mapping (matches transform page)
+const MODEL_LABELS: Record<string, string> = {
+  openai_1_5: "V1",
+  nano_banana_pro: "V2",
+  flux_2_pro: "V3",
+  openai_2: "V4",
+}
+
+function getModelLabel(sourceModel: string | null | undefined): string {
+  if (!sourceModel) return ""
+  return MODEL_LABELS[sourceModel] || sourceModel
+}
 import {
   Loader2,
   Upload,
@@ -768,7 +781,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
 
                         {variation.source_model && (
                           <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white text-xs">
-                            {variation.source_model}
+                            {getModelLabel(variation.source_model)}
                           </div>
                         )}
                       </div>
