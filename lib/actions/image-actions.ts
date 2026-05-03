@@ -157,17 +157,15 @@ export async function transformImage(
 
 async function uploadToStorage(base64Data: string, storagePath: string, contentType: string): Promise<string> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!supabaseUrl) {
     console.error("[v0] uploadToStorage: Missing Supabase configuration")
     throw new Error("Missing Supabase configuration")
   }
 
-  // Convert base64 to Uint8Array (more compatible with fetch in server actions)
+  // Convert base64 to Buffer
   const buffer = Buffer.from(base64Data, "base64")
-  const uint8Array = new Uint8Array(buffer)
-  console.log("[v0] uploadToStorage: Buffer size:", uint8Array.length, "bytes, content type:", contentType)
+  console.log("[v0] uploadToStorage: Buffer size:", buffer.length, "bytes, content type:", contentType)
 
   // Normalize and validate content type - Supabase is strict about MIME types
   const validMimeTypes: Record<string, string> = {
@@ -193,40 +191,31 @@ async function uploadToStorage(base64Data: string, storagePath: string, contentT
   // Normalize the content type
   const normalizedContentType = validMimeTypes[contentType?.toLowerCase()] || extToMime[ext] || "image/jpeg"
 
-  const uploadUrl = `${supabaseUrl}/storage/v1/object/original-uploads/${storagePath}`
-
   try {
-    const response = await fetch(uploadUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": normalizedContentType,
-        "x-upsert": "true",
-      },
-      body: uint8Array,
-    })
+    // Use Supabase client for upload - it handles binary data properly in server actions
+    const supabase = await createServerSupabaseClient()
+    
+    const { data, error } = await supabase.storage
+      .from("original-uploads")
+      .upload(storagePath, buffer, {
+        contentType: normalizedContentType,
+        upsert: true,
+      })
 
-    const responseText = await response.text()
-    console.log("[v0] uploadToStorage: Response status:", response.status, "data:", responseText?.substring(0, 200))
-
-    // Check for error messages in response body
-    const isPayloadTooLarge = responseText?.includes("FUNCTION_PAYLOAD_TOO_LARGE") || 
-                               responseText?.includes("Request Entity Too Large") ||
-                               responseText?.includes("PayloadTooLargeError")
-
-    if (isPayloadTooLarge) {
-      console.error("[v0] uploadToStorage: File too large for serverless function")
-      throw new Error("File is too large. Please use an image under 4MB or compress it before uploading.")
+    if (error) {
+      console.error("[v0] uploadToStorage: Supabase error:", error)
+      
+      // Check for payload too large errors
+      if (error.message?.includes("Payload too large") || error.message?.includes("413")) {
+        throw new Error("File is too large. Please use an image under 4MB or compress it before uploading.")
+      }
+      
+      throw new Error(`Upload failed: ${error.message}`)
     }
 
-    if (response.ok) {
-      const publicUrl = `${supabaseUrl}/storage/v1/object/public/original-uploads/${storagePath}`
-      console.log("[v0] uploadToStorage: Success, URL:", publicUrl)
-      return publicUrl
-    } else {
-      console.error("[v0] uploadToStorage: Failed with status", response.status, responseText)
-      throw new Error(`Upload failed with status ${response.status}: ${responseText}`)
-    }
+    const publicUrl = `${supabaseUrl}/storage/v1/object/public/original-uploads/${storagePath}`
+    console.log("[v0] uploadToStorage: Success, URL:", publicUrl)
+    return publicUrl
   } catch (error) {
     console.error("[v0] uploadToStorage: Request error:", error)
     if (error instanceof Error) {
