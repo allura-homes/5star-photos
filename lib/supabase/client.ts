@@ -11,8 +11,36 @@ export function createClient(): SupabaseClient {
     return supabaseInstance
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // Check if environment variables are available
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn("[v0] Supabase environment variables not yet available, will retry on next call")
+    // Return a minimal mock client that won't crash but also won't work
+    // This allows the app to render while env vars are loading
+    return {
+      auth: {
+        getSession: async () => ({ data: { session: null }, error: null }),
+        getUser: async () => ({ data: { user: null }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+        signInWithOAuth: async () => ({ data: null, error: new Error("Supabase not initialized") }),
+        signOut: async () => ({ error: null }),
+      },
+      from: () => ({
+        select: () => ({ data: null, error: new Error("Supabase not initialized") }),
+        insert: () => ({ data: null, error: new Error("Supabase not initialized") }),
+        update: () => ({ data: null, error: new Error("Supabase not initialized") }),
+        delete: () => ({ data: null, error: new Error("Supabase not initialized") }),
+      }),
+      storage: {
+        from: () => ({
+          upload: async () => ({ data: null, error: new Error("Supabase not initialized") }),
+          getPublicUrl: () => ({ data: { publicUrl: "" } }),
+        }),
+      },
+    } as unknown as SupabaseClient
+  }
 
   supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey, {
     auth: {
