@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { useAuth, type AuthState } from "@/lib/hooks/use-auth"
 import { clearAuthState } from "@/lib/supabase/client"
 
@@ -13,7 +13,19 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const auth = useAuth()
+  const [isSupabaseReady, setIsSupabaseReady] = useState(false)
+  
+  // Check if Supabase is configured on mount
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (url && key) {
+      setIsSupabaseReady(true)
+    }
+  }, [])
+  
+  // Only call useAuth when Supabase is ready
+  const auth = useAuth(isSupabaseReady)
 
   // Set up global error handler for unhandled auth errors
   useEffect(() => {

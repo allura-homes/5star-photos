@@ -40,22 +40,32 @@ export interface AuthState {
 
 const AUTH_TIMEOUT = 10000
 
-export function useAuth() {
+export function useAuth(enabled: boolean = true) {
   const [state, setState] = useState<AuthState>({
     user: null,
     profile: null,
-    isLoading: true,
+    isLoading: enabled, // Only loading if enabled
     isAuthenticated: false,
     isAdmin: false,
     canUploadFree: true,
     freePreviewsRemaining: 3,
   })
 
-  // Create supabase client once and memoize it
-  const supabase = useMemo(() => createClient(), [])
+  // Create supabase client once and memoize it - only when enabled
+  const supabase = useMemo(() => {
+    if (!enabled) return null
+    try {
+      return createClient()
+    } catch (e) {
+      console.error("[v0] Failed to create Supabase client:", e)
+      return null
+    }
+  }, [enabled])
   const fetchingProfileRef = useRef<Promise<UserProfile | null> | null>(null)
 
   const fetchProfile = useCallback(async (userId: string, retryCount = 0): Promise<UserProfile | null> => {
+    if (!supabase) return null
+    
     // Return existing promise if already fetching (and not a retry)
     if (fetchingProfileRef.current && retryCount === 0) {
       return fetchingProfileRef.current
@@ -131,6 +141,8 @@ export function useAuth() {
   }, [state.user, fetchProfile])
 
   const refreshAuth = useCallback(async () => {
+    if (!supabase) return
+    
     setState((prev) => ({ ...prev, isLoading: true }))
 
     try {
@@ -197,6 +209,8 @@ export function useAuth() {
   }, [supabase, fetchProfile])
 
   useEffect(() => {
+    if (!supabase) return
+    
     let isMounted = true
     let debounceTimer: NodeJS.Timeout | null = null
     let lastUserId: string | null = null
@@ -276,6 +290,7 @@ export function useAuth() {
   }, [supabase, fetchProfile])
 
   const signOut = useCallback(async () => {
+    if (!supabase) return
     await supabase.auth.signOut()
   }, [supabase])
 
