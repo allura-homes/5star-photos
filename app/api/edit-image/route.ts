@@ -1043,7 +1043,14 @@ export async function POST(req: Request) {
       } else if (provider === "nano_banana" || provider === "nano_banana_pro" || provider === "gemini_3_pro") {
         console.log(`[v0] Calling Nano Banana Pro / Gemini 3 Pro (v${variation_number})`)
         try {
-          const nanoBananaUrl = await generateNanoBananaImage(original_url, promptToUse)
+          // Nano Banana tends to produce warm/orange lighting for indoor photos
+          // Add explicit lighting guidance to counteract this tendency
+          const isIndoor = classification === "indoor"
+          const nanoBananaPrompt = isIndoor 
+            ? `${promptToUse}\n\nCRITICAL LIGHTING OVERRIDE FOR THIS MODEL: This model tends to produce overly warm, amber, or orange lighting. COUNTERACT this by ensuring:\n- Color temperature stays NEUTRAL to COOL (4000-4500K) - think bright daylight, NOT cozy candlelight\n- Walls MUST remain PURE WHITE or their original color with NO orange/amber color cast\n- Avoid any golden, warm, or amber tones on walls and ceilings\n- Light should feel BRIGHT, CLEAN, and FRESH like morning sunlight through windows\n- NO glowing amber lamps or heavy warm atmospheric lighting\n- Think: CLEAN, CRISP real estate photography, NOT moody interior design magazine`
+            : promptToUse
+          
+          const nanoBananaUrl = await generateNanoBananaImage(original_url, nanoBananaPrompt)
           console.log(
             "[v0] Nano Banana returned URL type:",
             nanoBananaUrl?.startsWith("data:") ? "base64" : "url",

@@ -24,8 +24,7 @@ import {
 // Provider values must match what edit-image API expects
 const BATCH_MODELS = [
   { model: "openai_1_5", label: "V1" },
-  // DEPRECATED 2026-05-15: nano_banana_pro (V2) - fal.ai billing issues + poor indoor lighting
-  // { model: "nano_banana_pro", label: "V2" },
+  { model: "nano_banana_pro", label: "V2" },
   // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
   // { model: "flux_2_pro", label: "V3" },
   { model: "openai_2", label: "V4" },
