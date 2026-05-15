@@ -1045,7 +1045,12 @@ export async function POST(req: Request) {
         try {
           // Nano Banana tends to produce warm/orange lighting for indoor photos
           // Add explicit lighting guidance to counteract this tendency
-          const isIndoor = classification === "indoor"
+          // Check room_type_guess or prompt content to determine if indoor
+          const indoorRoomTypes = ["bedroom", "living", "kitchen", "bathroom", "dining", "office", "interior", "indoor"]
+          const roomGuessLower = (room_type_guess || "").toLowerCase()
+          const promptLower = (promptToUse || "").toLowerCase()
+          const isIndoor = indoorRoomTypes.some(type => roomGuessLower.includes(type) || promptLower.includes(type))
+          
           const nanoBananaPrompt = isIndoor 
             ? `${promptToUse}\n\nCRITICAL LIGHTING OVERRIDE FOR THIS MODEL: This model tends to produce overly warm, amber, or orange lighting. COUNTERACT this by ensuring:\n- Color temperature stays NEUTRAL to COOL (4000-4500K) - think bright daylight, NOT cozy candlelight\n- Walls MUST remain PURE WHITE or their original color with NO orange/amber color cast\n- Avoid any golden, warm, or amber tones on walls and ceilings\n- Light should feel BRIGHT, CLEAN, and FRESH like morning sunlight through windows\n- NO glowing amber lamps or heavy warm atmospheric lighting\n- Think: CLEAN, CRISP real estate photography, NOT moody interior design magazine`
             : promptToUse
