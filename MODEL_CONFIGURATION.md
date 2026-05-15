@@ -30,7 +30,34 @@ This document defines the exact AI models used for image enhancement. These conf
 
 ## Deprecated Models
 
-### ~~Gemini Flash~~ (DEPRECATED - was v2)
+### ~~Nano Banana Pro~~ (DEPRECATED - was V2)
+- **Model**: `gemini-3-pro-image-preview` (via fal.ai)
+- **Status**: DEPRECATED - disabled on 2026-05-15
+- **Reason**: 
+  1. fal.ai billing issues through Vercel integration
+  2. Poor lighting quality for indoor photos - produces warm/orange cast ("dank" lighting)
+  3. Not suitable for bright, professional real estate photography
+- **To Re-enable**: Uncomment `nano_banana_pro` in MODEL_CONFIG arrays in:
+  - `/app/transform/[imageId]/page.tsx`
+  - `/app/batch-transform/page.tsx`
+
+### ~~FLUX.2 Pro Edit~~ (DEPRECATED - was V3)
+- **Model**: `flux-2-pro/edit` (via fal.ai)
+- **Status**: DEPRECATED - disabled on 2026-05-15
+- **Reason**: fal.ai billing issues through Vercel integration
+- **To Re-enable**: 
+  1. Resolve fal.ai billing at fal.ai/dashboard/billing
+  2. Uncomment `flux_2_pro` in MODEL_CONFIG arrays in:
+     - `/app/transform/[imageId]/page.tsx`
+     - `/app/batch-transform/page.tsx`
+
+### ~~fal.ai Upscaling~~ (DEPRECATED)
+- **Model**: `fal-ai/esrgan` (RealESRGAN_x4plus)
+- **Status**: DEPRECATED - disabled on 2026-05-15
+- **Reason**: fal.ai billing issues through Vercel integration
+- **To Re-enable**: Remove early return in `/app/api/upscale/route.ts`
+
+### ~~Gemini Flash~~ (DEPRECATED - was V2)
 - **Model**: `gemini-2.0-flash-exp-image-generation`
 - **Status**: DEPRECATED - removed from production on 2025-12-03
 - **Reason**: Consistently produced over-saturated colors, changed house colors dramatically (green houses became yellow/orange), unnatural sky gradients. Not suitable for real estate photo enhancement where color accuracy is critical.
@@ -61,6 +88,13 @@ The prompt explicitly forbids:
 - Replacing background buildings with trees/sky
 
 ## Version History
+
+- **2026-05-15 (fal.ai Deprecation)**: Disabled all fal.ai models due to billing issues
+  - Disabled V2 (Nano Banana Pro) - also had poor indoor lighting quality
+  - Disabled V3 (FLUX.2 Pro Edit)
+  - Disabled fal.ai ESRGAN upscaling
+  - Now only running V1 (OpenAI gpt-image-1) and V4 (OpenAI gpt-image-1 variant)
+  - Code preserved with comments for easy re-enablement
 
 - **2025-12-03 (V2 Deprecation)**: Deprecated Gemini Flash due to poor color accuracy
   - Removed gemini-2.0-flash-exp-image-generation from production
