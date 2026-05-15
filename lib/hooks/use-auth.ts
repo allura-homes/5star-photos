@@ -44,7 +44,7 @@ export function useAuth(enabled: boolean = true) {
   const [state, setState] = useState<AuthState>({
     user: null,
     profile: null,
-    isLoading: enabled, // Only loading if enabled
+    isLoading: true, // Always start as loading until we know auth state
     isAuthenticated: false,
     isAdmin: false,
     canUploadFree: true,
@@ -240,6 +240,45 @@ export function useAuth(enabled: boolean = true) {
         freePreviewsRemaining: profile ? Math.max(0, profile.free_previews_limit - profile.free_previews_used) : 3,
       })
     }
+
+    // Do an initial auth check immediately
+    const checkInitialAuth = async () => {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser()
+        
+        if (!isMounted) return
+        
+        if (error && isRefreshTokenError(error)) {
+          console.log("[v0] Initial auth check: invalid refresh token, clearing")
+          clearAuthState()
+          setUnauthenticated()
+          return
+        }
+        
+        if (user) {
+          lastUserId = user.id
+          setAuthenticated(user, null)
+          // Fetch profile in background
+          const profile = await fetchProfile(user.id)
+          if (isMounted && profile) {
+            setState(prev => ({
+              ...prev,
+              profile,
+              isAdmin: profile.role === "admin",
+              canUploadFree: profile.free_previews_used < profile.free_previews_limit,
+              freePreviewsRemaining: Math.max(0, profile.free_previews_limit - profile.free_previews_used),
+            }))
+          }
+        } else {
+          setUnauthenticated()
+        }
+      } catch (e) {
+        console.error("[v0] Initial auth check error:", e)
+        if (isMounted) setUnauthenticated()
+      }
+    }
+    
+    checkInitialAuth()
 
     // Set up auth state listener with debouncing to prevent lock contention
     const {
