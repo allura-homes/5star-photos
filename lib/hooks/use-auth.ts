@@ -50,16 +50,26 @@ export function useAuth() {
     canUploadFree: true,
     freePreviewsRemaining: 3,
   })
-
-  // Create supabase client once and memoize it
+  
+  // Track if we're mounted (client-side only)
+  const [isMounted, setIsMounted] = useState(false)
+  
+  // Create supabase client only after mount (client-side only)
   const supabase = useMemo(() => {
+    if (!isMounted) return null
     try {
       return createClient()
     } catch (e) {
       console.error("[v0] Failed to create Supabase client:", e)
       return null
     }
+  }, [isMounted])
+  
+  // Set mounted state after initial render
+  useEffect(() => {
+    setIsMounted(true)
   }, [])
+  
   const fetchingProfileRef = useRef<Promise<UserProfile | null> | null>(null)
 
   const fetchProfile = useCallback(async (userId: string, retryCount = 0): Promise<UserProfile | null> => {
@@ -208,7 +218,10 @@ export function useAuth() {
   }, [supabase, fetchProfile])
 
   useEffect(() => {
-    // If supabase client failed to initialize, set loading to false
+    // Wait for mount before checking supabase
+    if (!isMounted) return
+    
+    // If supabase client failed to initialize after mount, set loading to false
     if (!supabase) {
       setState(prev => ({ ...prev, isLoading: false }))
       return
@@ -329,7 +342,7 @@ export function useAuth() {
       if (debounceTimer) clearTimeout(debounceTimer)
       subscription.unsubscribe()
     }
-  }, [supabase, fetchProfile])
+  }, [isMounted, supabase, fetchProfile])
 
   const signOut = useCallback(async () => {
     if (!supabase) return

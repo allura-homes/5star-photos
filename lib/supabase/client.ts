@@ -9,16 +9,20 @@ declare global {
 }
 
 export function createClient(): SupabaseClient {
+  // Only run on client side
+  if (typeof window === "undefined") {
+    throw new Error("createClient should only be called on the client side")
+  }
+  
   // Return existing global instance if available (survives HMR and navigation)
-  if (typeof window !== "undefined" && globalThis.__supabaseClient) {
+  if (globalThis.__supabaseClient) {
     return globalThis.__supabaseClient
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  // If env vars aren't available, throw an error early rather than creating
-  // multiple clients when they become available
+  // If env vars aren't available, throw an error
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error("Supabase environment variables not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.")
   }
@@ -33,12 +37,10 @@ export function createClient(): SupabaseClient {
   })
 
   // Store in global for persistence
-  if (typeof window !== "undefined") {
-    globalThis.__supabaseClient = client
-  }
+  globalThis.__supabaseClient = client
 
   // Set up auth error listener to handle invalid refresh tokens
-  if (typeof window !== "undefined" && !globalThis.__supabaseAuthListenerSetup) {
+  if (!globalThis.__supabaseAuthListenerSetup) {
     globalThis.__supabaseAuthListenerSetup = true
     
     // Listen for auth errors and clear invalid sessions
