@@ -40,7 +40,7 @@ export interface AuthState {
 
 const AUTH_TIMEOUT = 10000
 
-export function useAuth(enabled: boolean = true) {
+export function useAuth() {
   const [state, setState] = useState<AuthState>({
     user: null,
     profile: null,
@@ -51,16 +51,15 @@ export function useAuth(enabled: boolean = true) {
     freePreviewsRemaining: 3,
   })
 
-  // Create supabase client once and memoize it - only when enabled
+  // Create supabase client once and memoize it
   const supabase = useMemo(() => {
-    if (!enabled) return null
     try {
       return createClient()
     } catch (e) {
       console.error("[v0] Failed to create Supabase client:", e)
       return null
     }
-  }, [enabled])
+  }, [])
   const fetchingProfileRef = useRef<Promise<UserProfile | null> | null>(null)
 
   const fetchProfile = useCallback(async (userId: string, retryCount = 0): Promise<UserProfile | null> => {
@@ -209,7 +208,11 @@ export function useAuth(enabled: boolean = true) {
   }, [supabase, fetchProfile])
 
   useEffect(() => {
-    if (!supabase) return
+    // If supabase client failed to initialize, set loading to false
+    if (!supabase) {
+      setState(prev => ({ ...prev, isLoading: false }))
+      return
+    }
     
     let isMounted = true
     let debounceTimer: NodeJS.Timeout | null = null

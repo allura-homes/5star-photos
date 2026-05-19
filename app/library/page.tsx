@@ -37,9 +37,18 @@ export default function LibraryPage() {
     setRefreshKey((k) => k + 1)
   }, [])
 
-  // Auth is now handled by middleware - if we get here, user is authenticated
-  // Show loading while fetching profile data
+  // Show loading while auth is initializing
   if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950">
+        <Loader2 className="w-8 h-8 text-[#FF3EDB] animate-spin" />
+      </div>
+    )
+  }
+
+  // Redirect to login if not authenticated (after loading completes)
+  if (!isAuthenticated) {
+    router.push("/auth/login?redirect=/library")
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950">
         <Loader2 className="w-8 h-8 text-[#FF3EDB] animate-spin" />
