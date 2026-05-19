@@ -1,15 +1,9 @@
-import { createBrowserClient } from "@supabase/ssr"
+import { createClient } from "@/lib/supabase/client"
 
-let supabaseClient: ReturnType<typeof createBrowserClient> | null = null
-
+// Re-export createClient as getSupabaseClient for backwards compatibility
+// This file is deprecated - use @/lib/supabase/client directly
 export function getSupabaseClient() {
-  if (!supabaseClient) {
-    supabaseClient = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    )
-  }
-  return supabaseClient
+  return createClient()
 }
 
 function sanitizeFileName(name: string): string {
