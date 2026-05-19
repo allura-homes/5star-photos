@@ -41,6 +41,7 @@ export interface AuthState {
 const AUTH_TIMEOUT = 10000
 
 export function useAuth() {
+  console.log("[v0] useAuth hook called")
   const [state, setState] = useState<AuthState>({
     user: null,
     profile: null,
@@ -51,28 +52,32 @@ export function useAuth() {
     freePreviewsRemaining: 3,
   })
   
-  // Track if we're mounted (client-side only)
-  const [isMounted, setIsMounted] = useState(false)
+  // Store supabase client in a ref to avoid re-renders
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
   
-  // Create supabase client only after mount (client-side only)
-  const supabase = useMemo(() => {
-    if (!isMounted) return null
+  // Get or create supabase client (only on client side)
+  const getSupabase = useCallback(() => {
+    console.log("[v0] getSupabase called, window:", typeof window)
+    if (typeof window === "undefined") return null
+    if (supabaseRef.current) {
+      console.log("[v0] Returning existing supabase client")
+      return supabaseRef.current
+    }
     try {
-      return createClient()
+      console.log("[v0] Creating new supabase client")
+      supabaseRef.current = createClient()
+      console.log("[v0] Supabase client created successfully")
+      return supabaseRef.current
     } catch (e) {
       console.error("[v0] Failed to create Supabase client:", e)
       return null
     }
-  }, [isMounted])
-  
-  // Set mounted state after initial render
-  useEffect(() => {
-    setIsMounted(true)
   }, [])
   
   const fetchingProfileRef = useRef<Promise<UserProfile | null> | null>(null)
 
   const fetchProfile = useCallback(async (userId: string, retryCount = 0): Promise<UserProfile | null> => {
+    const supabase = getSupabase()
     if (!supabase) return null
     
     // Return existing promise if already fetching (and not a retry)
@@ -150,6 +155,7 @@ export function useAuth() {
   }, [state.user, fetchProfile])
 
   const refreshAuth = useCallback(async () => {
+    const supabase = getSupabase()
     if (!supabase) return
     
     setState((prev) => ({ ...prev, isLoading: true }))
@@ -215,14 +221,16 @@ export function useAuth() {
         freePreviewsRemaining: 3,
       })
     }
-  }, [supabase, fetchProfile])
+  }, [getSupabase, fetchProfile])
 
   useEffect(() => {
-    // Wait for mount before checking supabase
-    if (!isMounted) return
+    console.log("[v0] useAuth main effect running")
+    const supabase = getSupabase()
+    console.log("[v0] Got supabase in effect:", !!supabase)
     
-    // If supabase client failed to initialize after mount, set loading to false
+    // If supabase client failed to initialize, set loading to false
     if (!supabase) {
+      console.log("[v0] No supabase client, setting isLoading to false")
       setState(prev => ({ ...prev, isLoading: false }))
       return
     }
@@ -342,12 +350,13 @@ export function useAuth() {
       if (debounceTimer) clearTimeout(debounceTimer)
       subscription.unsubscribe()
     }
-  }, [isMounted, supabase, fetchProfile])
+  }, [getSupabase, fetchProfile])
 
   const signOut = useCallback(async () => {
+    const supabase = getSupabase()
     if (!supabase) return
     await supabase.auth.signOut()
-  }, [supabase])
+  }, [getSupabase])
 
   return {
     ...state,
