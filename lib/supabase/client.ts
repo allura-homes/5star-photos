@@ -1,67 +1,23 @@
 import { createBrowserClient } from "@supabase/ssr"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-// Use a global variable to ensure singleton survives hot module reloading
-// and page navigations in Next.js
-declare global {
-  var __supabaseClient: SupabaseClient | undefined
-  var __supabaseAuthListenerSetup: boolean | undefined
-}
+// Simple singleton pattern
+let supabaseInstance: SupabaseClient | null = null
 
 export function createClient(): SupabaseClient {
-  // Only run on client side
-  if (typeof window === "undefined") {
-    throw new Error("createClient should only be called on the client side")
-  }
-  
-  // Return existing global instance if available (survives HMR and navigation)
-  if (globalThis.__supabaseClient) {
-    return globalThis.__supabaseClient
+  if (supabaseInstance) {
+    return supabaseInstance
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-  // If env vars aren't available, throw an error
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Supabase environment variables not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.")
-  }
+  supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey)
 
-  const client = createBrowserClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      flowStateExpirySeconds: 300,
-    },
-  })
-
-  // Store in global for persistence
-  globalThis.__supabaseClient = client
-
-  // Set up auth error listener to handle invalid refresh tokens
-  if (!globalThis.__supabaseAuthListenerSetup) {
-    globalThis.__supabaseAuthListenerSetup = true
-    
-    // Listen for auth errors and clear invalid sessions
-    client.auth.onAuthStateChange((event, session) => {
-      if (event === "TOKEN_REFRESHED" && !session) {
-        // Token refresh failed - clear any stale cookies
-        console.log("[v0] Token refresh failed, clearing session")
-        document.cookie.split(";").forEach((c) => {
-          const name = c.trim().split("=")[0]
-          if (name.includes("supabase") || name.includes("sb-")) {
-            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
-          }
-        })
-      }
-    })
-  }
-
-  return client
+  return supabaseInstance
 }
 
-// Clear invalid auth state - call this when catching refresh token errors
+// Clear auth state - call this when catching refresh token errors
 export function clearAuthState(): void {
   if (typeof window !== "undefined") {
     document.cookie.split(";").forEach((c) => {
@@ -70,7 +26,6 @@ export function clearAuthState(): void {
         document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
       }
     })
-    globalThis.__supabaseClient = undefined
-    globalThis.__supabaseAuthListenerSetup = undefined
+    supabaseInstance = null
   }
 }

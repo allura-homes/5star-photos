@@ -39,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="bg-background">
       <body className={`${montserrat.variable} font-sans antialiased`}>
         <AuthProvider>{children}</AuthProvider>
         <Analytics />

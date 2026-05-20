@@ -1,7 +1,7 @@
 "use client"
 
 import { createClient, clearAuthState } from "@/lib/supabase/client"
-import { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import type { User } from "@supabase/supabase-js"
 
 // Helper to check if an error is a refresh token error
@@ -41,44 +41,20 @@ export interface AuthState {
 const AUTH_TIMEOUT = 10000
 
 export function useAuth() {
-  console.log("[v0] useAuth hook called")
   const [state, setState] = useState<AuthState>({
     user: null,
     profile: null,
-    isLoading: true, // Always start as loading until we know auth state
+    isLoading: true,
     isAuthenticated: false,
     isAdmin: false,
     canUploadFree: true,
     freePreviewsRemaining: 3,
   })
   
-  // Store supabase client in a ref to avoid re-renders
-  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
-  
-  // Get or create supabase client (only on client side)
-  const getSupabase = useCallback(() => {
-    console.log("[v0] getSupabase called, window:", typeof window)
-    if (typeof window === "undefined") return null
-    if (supabaseRef.current) {
-      console.log("[v0] Returning existing supabase client")
-      return supabaseRef.current
-    }
-    try {
-      console.log("[v0] Creating new supabase client")
-      supabaseRef.current = createClient()
-      console.log("[v0] Supabase client created successfully")
-      return supabaseRef.current
-    } catch (e) {
-      console.error("[v0] Failed to create Supabase client:", e)
-      return null
-    }
-  }, [])
-  
   const fetchingProfileRef = useRef<Promise<UserProfile | null> | null>(null)
 
   const fetchProfile = useCallback(async (userId: string, retryCount = 0): Promise<UserProfile | null> => {
-    const supabase = getSupabase()
-    if (!supabase) return null
+    const supabase = createClient()
     
     // Return existing promise if already fetching (and not a retry)
     if (fetchingProfileRef.current && retryCount === 0) {
@@ -102,49 +78,24 @@ export function useAuth() {
           return null
         }
 
-        return profile as UserProfile
+        return profile
       } catch (error) {
-        if (error instanceof Error) {
-          // Identify transient/retryable errors
-          const isTransient = error.message.includes("Lock") || 
-            error.message.includes("Failed to fetch") ||
-            error.message.includes("NetworkError") ||
-            error.message.includes("Too Many R") ||
-            error.message.includes("not valid JSON")
-          
-          if (isTransient && retryCount < 3) {
-            // Silent retry - don't log transient errors
-            const delay = error.message.includes("Too Many R") ? 2000 : 500 * (retryCount + 1)
-            await new Promise((resolve) => setTimeout(resolve, delay))
-            fetchingProfileRef.current = null
-            return fetchProfile(userId, retryCount + 1)
-          }
-          // Only log after all retries exhausted and it's not a transient error
-          // (transient errors that exhausted retries are expected in poor network conditions)
-          if (!isTransient && retryCount >= 3) {
-            console.error("[v0] Error fetching profile after retries:", error.message)
-          }
-        }
+        console.error("[v0] Exception fetching profile:", error)
         return null
       } finally {
-        if (retryCount === 0) {
-          fetchingProfileRef.current = null
-        }
+        fetchingProfileRef.current = null
       }
     })()
 
-    if (retryCount === 0) {
-      fetchingProfileRef.current = fetchPromise
-    }
+    fetchingProfileRef.current = fetchPromise
     return fetchPromise
-  }, [supabase])
+  }, [])
 
   const refreshProfile = useCallback(async () => {
     if (!state.user) return
-
     const profile = await fetchProfile(state.user.id)
     if (profile) {
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         profile,
         isAdmin: profile.role === "admin",
@@ -155,21 +106,16 @@ export function useAuth() {
   }, [state.user, fetchProfile])
 
   const refreshAuth = useCallback(async () => {
-    const supabase = getSupabase()
-    if (!supabase) return
-    
+    const supabase = createClient()
     setState((prev) => ({ ...prev, isLoading: true }))
 
     try {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser()
+      const { data: { user }, error } = await supabase.auth.getUser()
 
-      // Handle refresh token errors by clearing auth state
-      if (error && isRefreshTokenError(error)) {
-        console.log("[v0] Invalid refresh token, clearing auth state")
-        clearAuthState()
+      if (error) {
+        if (isRefreshTokenError(error)) {
+          clearAuthState()
+        }
         setState({
           user: null,
           profile: null,
@@ -182,11 +128,18 @@ export function useAuth() {
         return
       }
 
-      if (error && error.message !== "Auth session missing!") {
-        console.error("[v0] Error refreshing auth:", error.message)
-      }
-
-      if (error || !user) {
+      if (user) {
+        const profile = await fetchProfile(user.id)
+        setState({
+          user,
+          profile,
+          isLoading: false,
+          isAuthenticated: true,
+          isAdmin: profile?.role === "admin" || false,
+          canUploadFree: profile ? profile.free_previews_used < profile.free_previews_limit : true,
+          freePreviewsRemaining: profile ? Math.max(0, profile.free_previews_limit - profile.free_previews_used) : 3,
+        })
+      } else {
         setState({
           user: null,
           profile: null,
@@ -196,21 +149,8 @@ export function useAuth() {
           canUploadFree: true,
           freePreviewsRemaining: 3,
         })
-        return
       }
-
-      const profile = await fetchProfile(user.id)
-      setState({
-        user,
-        profile,
-        isLoading: false,
-        isAuthenticated: true,
-        isAdmin: profile?.role === "admin" || false,
-        canUploadFree: profile ? profile.free_previews_used < profile.free_previews_limit : true,
-        freePreviewsRemaining: profile ? Math.max(0, profile.free_previews_limit - profile.free_previews_used) : 3,
-      })
-    } catch (error) {
-      console.error("[v0] Exception in refreshAuth:", error)
+    } catch {
       setState({
         user: null,
         profile: null,
@@ -221,23 +161,11 @@ export function useAuth() {
         freePreviewsRemaining: 3,
       })
     }
-  }, [getSupabase, fetchProfile])
+  }, [fetchProfile])
 
   useEffect(() => {
-    console.log("[v0] useAuth main effect running")
-    const supabase = getSupabase()
-    console.log("[v0] Got supabase in effect:", !!supabase)
-    
-    // If supabase client failed to initialize, set loading to false
-    if (!supabase) {
-      console.log("[v0] No supabase client, setting isLoading to false")
-      setState(prev => ({ ...prev, isLoading: false }))
-      return
-    }
-    
+    const supabase = createClient()
     let isMounted = true
-    let debounceTimer: NodeJS.Timeout | null = null
-    let lastUserId: string | null = null
 
     const setUnauthenticated = () => {
       if (!isMounted) return
@@ -265,98 +193,57 @@ export function useAuth() {
       })
     }
 
-    // Do an initial auth check immediately
-    const checkInitialAuth = async () => {
+    // Initial auth check
+    const checkAuth = async () => {
       try {
         const { data: { user }, error } = await supabase.auth.getUser()
         
         if (!isMounted) return
         
         if (error && isRefreshTokenError(error)) {
-          console.log("[v0] Initial auth check: invalid refresh token, clearing")
           clearAuthState()
           setUnauthenticated()
           return
         }
         
         if (user) {
-          lastUserId = user.id
-          setAuthenticated(user, null)
-          // Fetch profile in background
           const profile = await fetchProfile(user.id)
-          if (isMounted && profile) {
-            setState(prev => ({
-              ...prev,
-              profile,
-              isAdmin: profile.role === "admin",
-              canUploadFree: profile.free_previews_used < profile.free_previews_limit,
-              freePreviewsRemaining: Math.max(0, profile.free_previews_limit - profile.free_previews_used),
-            }))
-          }
+          setAuthenticated(user, profile)
         } else {
           setUnauthenticated()
         }
-      } catch (e) {
-        console.error("[v0] Initial auth check error:", e)
+      } catch {
         if (isMounted) setUnauthenticated()
       }
     }
     
-    checkInitialAuth()
+    checkAuth()
 
-    // Set up auth state listener with debouncing to prevent lock contention
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      // Clear any pending debounce
-      if (debounceTimer) {
-        clearTimeout(debounceTimer)
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return
+      
+      if (event === "SIGNED_OUT" || !session?.user) {
+        setUnauthenticated()
+        return
       }
 
-      // Debounce auth changes to prevent rapid-fire lock contention
-      debounceTimer = setTimeout(async () => {
-        if (!isMounted) return
-        
-        if (session?.user) {
-          // Skip if same user (prevents duplicate fetches)
-          if (lastUserId === session.user.id && event !== "TOKEN_REFRESHED") {
-            return
-          }
-          lastUserId = session.user.id
-          
-          // Set authenticated immediately with null profile, then fetch profile
-          setAuthenticated(session.user, null)
-          
-          // Fetch profile separately (non-blocking)
-          const profile = await fetchProfile(session.user.id)
-          if (isMounted && profile) {
-            setState(prev => ({
-              ...prev,
-              profile,
-              isAdmin: profile.role === "admin",
-              canUploadFree: profile.free_previews_used < profile.free_previews_limit,
-              freePreviewsRemaining: Math.max(0, profile.free_previews_limit - profile.free_previews_used),
-            }))
-          }
-        } else {
-          lastUserId = null
-          setUnauthenticated()
-        }
-      }, 100) // 100ms debounce
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        const profile = await fetchProfile(session.user.id)
+        setAuthenticated(session.user, profile)
+      }
     })
 
     return () => {
       isMounted = false
-      if (debounceTimer) clearTimeout(debounceTimer)
       subscription.unsubscribe()
     }
-  }, [getSupabase, fetchProfile])
+  }, [fetchProfile])
 
   const signOut = useCallback(async () => {
-    const supabase = getSupabase()
-    if (!supabase) return
+    const supabase = createClient()
     await supabase.auth.signOut()
-  }, [getSupabase])
+  }, [])
 
   return {
     ...state,
