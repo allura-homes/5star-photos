@@ -92,7 +92,7 @@ function classifyFromFilename(filename: string): PhotoClassification {
 
 export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, setTokenBalance = () => {} }: ImageLibraryProps) {
   const router = useRouter()
-  const { isAuthenticated, isLoading: authLoading } = useAuthContext()
+  const { isAuthenticated, isLoading: authLoading, user } = useAuthContext()
   const [images, setImages] = useState<UserImage[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expandedImages, setExpandedImages] = useState<Set<string>>(new Set())
@@ -119,11 +119,11 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
   // Only load images once auth is confirmed
   useEffect(() => {
     if (authLoading) return
-    if (!isAuthenticated) return
+    if (!isAuthenticated || !user) return
     
     loadImages()
     loadProjects()
-  }, [authLoading, isAuthenticated])
+  }, [authLoading, isAuthenticated, user])
   
   async function loadProjects() {
     const { projects: data } = await getUserProjects()
@@ -177,7 +177,8 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     setIsLoading(true)
     setLoadError(null)
     try {
-      const { images: fetchedImages, error } = await getUserImages()
+      // Pass userId directly to bypass server-side cookie auth issues
+      const { images: fetchedImages, error } = await getUserImages(user?.id)
       if (error) {
         console.error("[v0] Load images error:", error)
         setLoadError(error)
