@@ -41,7 +41,6 @@ export interface AuthState {
 const AUTH_TIMEOUT = 10000
 
 export function useAuth() {
-  console.log("[v0] useAuth v2 - simplified")
   const [state, setState] = useState<AuthState>({
     user: null,
     profile: null,
@@ -165,6 +164,12 @@ export function useAuth() {
   }, [fetchProfile])
 
   useEffect(() => {
+    // Only run on client side
+    if (typeof window === "undefined") {
+      setState(prev => ({ ...prev, isLoading: false }))
+      return
+    }
+    
     const supabase = createClient()
     let isMounted = true
 
@@ -196,10 +201,8 @@ export function useAuth() {
 
     // Initial auth check
     const checkAuth = async () => {
-      console.log("[v0] checkAuth starting")
       try {
         const { data: { user }, error } = await supabase.auth.getUser()
-        console.log("[v0] checkAuth result:", { user: !!user, error: error?.message })
         
         if (!isMounted) return
         
@@ -224,7 +227,6 @@ export function useAuth() {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("[v0] onAuthStateChange:", event, "session:", !!session?.user)
       if (!isMounted) return
       
       if (event === "SIGNED_OUT" || !session?.user) {
@@ -233,7 +235,6 @@ export function useAuth() {
       }
 
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        console.log("[v0] User signed in via state change, fetching profile")
         const profile = await fetchProfile(session.user.id)
         setAuthenticated(session.user, profile)
       }

@@ -31,33 +31,24 @@ function LoginForm() {
     // Trim whitespace from email (common issue on mobile keyboards)
     const trimmedEmail = email.trim().toLowerCase()
     
-    console.log("[v0] Login attempt for email:", trimmedEmail)
-
     const { data, error } = await supabase.auth.signInWithPassword({
       email: trimmedEmail,
       password,
     })
 
     if (error) {
-      console.error("[v0] Login error:", error.message, error.status)
       setError(error.message)
       setIsLoading(false)
       return
     }
 
-    console.log("[v0] Login successful, user:", data.user?.email)
-    
     // Wait for auth state change to propagate and session to be stored
-    // The signInWithPassword triggers an auth state change event that the 
-    // Supabase client listens to and stores the session
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
-        console.log("[v0] Auth state change timeout, proceeding anyway")
         resolve()
       }, 2000)
       
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        console.log("[v0] Auth state changed:", event, !!session)
         if (event === "SIGNED_IN" && session) {
           clearTimeout(timeout)
           subscription.unsubscribe()
