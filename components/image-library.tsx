@@ -10,6 +10,7 @@ import type { UserImage, PhotoClassification, Project } from "@/lib/types"
 import { TOKEN_COSTS } from "@/lib/constants/tokens"
 import { v4 as uuidv4 } from "uuid"
 import { loadPendingFiles, clearPendingFiles } from "@/lib/pending-files-storage"
+import { useAuthContext } from "@/lib/contexts/auth-context"
 
 // Model to user-friendly label mapping (matches transform page)
 const MODEL_LABELS: Record<string, string> = {
@@ -91,6 +92,7 @@ function classifyFromFilename(filename: string): PhotoClassification {
 
 export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, setTokenBalance = () => {} }: ImageLibraryProps) {
   const router = useRouter()
+  const { isAuthenticated, isLoading: authLoading } = useAuthContext()
   const [images, setImages] = useState<UserImage[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expandedImages, setExpandedImages] = useState<Set<string>>(new Set())
@@ -114,10 +116,14 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  // Only load images once auth is confirmed
   useEffect(() => {
+    if (authLoading) return
+    if (!isAuthenticated) return
+    
     loadImages()
     loadProjects()
-  }, [])
+  }, [authLoading, isAuthenticated])
   
   async function loadProjects() {
     const { projects: data } = await getUserProjects()
