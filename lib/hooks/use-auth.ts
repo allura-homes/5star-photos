@@ -224,6 +224,7 @@ export function useAuth() {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("[v0] onAuthStateChange:", event, "session:", !!session?.user)
       if (!isMounted) return
       
       if (event === "SIGNED_OUT" || !session?.user) {
@@ -232,6 +233,7 @@ export function useAuth() {
       }
 
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        console.log("[v0] User signed in via state change, fetching profile")
         const profile = await fetchProfile(session.user.id)
         setAuthenticated(session.user, profile)
       }

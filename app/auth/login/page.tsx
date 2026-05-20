@@ -47,16 +47,27 @@ function LoginForm() {
 
     console.log("[v0] Login successful, user:", data.user?.email)
     
-    // Wait a moment for cookies to be set before redirecting
-    // This ensures the session is persisted before the page reload
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // Wait for auth state change to propagate and session to be stored
+    // The signInWithPassword triggers an auth state change event that the 
+    // Supabase client listens to and stores the session
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        console.log("[v0] Auth state change timeout, proceeding anyway")
+        resolve()
+      }, 2000)
+      
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        console.log("[v0] Auth state changed:", event, !!session)
+        if (event === "SIGNED_IN" && session) {
+          clearTimeout(timeout)
+          subscription.unsubscribe()
+          resolve()
+        }
+      })
+    })
     
-    // Verify session was set before redirecting
-    const { data: sessionData } = await supabase.auth.getSession()
-    console.log("[v0] Session verified before redirect:", !!sessionData.session)
-    
-    // Use window.location for a full page refresh to ensure auth state propagates
-    window.location.href = redirect
+    // Use router.push for client-side navigation (preserves auth context)
+    router.push(redirect)
   }
 
   const handleGoogleLogin = async () => {
