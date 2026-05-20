@@ -47,6 +47,14 @@ function LoginForm() {
 
     console.log("[v0] Login successful, user:", data.user?.email)
     
+    // Wait a moment for cookies to be set before redirecting
+    // This ensures the session is persisted before the page reload
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
+    // Verify session was set before redirecting
+    const { data: sessionData } = await supabase.auth.getSession()
+    console.log("[v0] Session verified before redirect:", !!sessionData.session)
+    
     // Use window.location for a full page refresh to ensure auth state propagates
     window.location.href = redirect
   }
