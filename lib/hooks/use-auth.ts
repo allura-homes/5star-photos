@@ -41,6 +41,7 @@ export interface AuthState {
 const AUTH_TIMEOUT = 10000
 
 export function useAuth() {
+  console.log("[v0] useAuth v2 - simplified")
   const [state, setState] = useState<AuthState>({
     user: null,
     profile: null,
@@ -195,8 +196,10 @@ export function useAuth() {
 
     // Initial auth check
     const checkAuth = async () => {
+      console.log("[v0] checkAuth starting")
       try {
         const { data: { user }, error } = await supabase.auth.getUser()
+        console.log("[v0] checkAuth result:", { user: !!user, error: error?.message })
         
         if (!isMounted) return
         
