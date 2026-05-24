@@ -52,6 +52,7 @@ export function useAuth() {
   })
   
   const fetchingProfileRef = useRef<Promise<UserProfile | null> | null>(null)
+  const authResolvedRef = useRef(false)
 
   const fetchProfile = useCallback(async (userId: string, retryCount = 0): Promise<UserProfile | null> => {
     const supabase = createClient()
@@ -175,6 +176,7 @@ export function useAuth() {
 
     const setUnauthenticated = () => {
       if (!isMounted) return
+      authResolvedRef.current = true
       setState({
         user: null,
         profile: null,
@@ -188,6 +190,7 @@ export function useAuth() {
 
     const setAuthenticated = (user: User, profile: UserProfile | null) => {
       if (!isMounted) return
+      authResolvedRef.current = true
       setState({
         user,
         profile,
@@ -223,6 +226,14 @@ export function useAuth() {
       }
     }
     
+    // Add timeout to prevent infinite loading state
+    const authTimeout = setTimeout(() => {
+      if (isMounted && !authResolvedRef.current) {
+        console.warn("[v0] Auth check timeout - setting unauthenticated")
+        setUnauthenticated()
+      }
+    }, AUTH_TIMEOUT)
+    
     checkAuth()
 
     // Listen for auth changes
@@ -242,6 +253,7 @@ export function useAuth() {
 
     return () => {
       isMounted = false
+      clearTimeout(authTimeout)
       subscription.unsubscribe()
     }
   }, [fetchProfile])
