@@ -6,7 +6,9 @@ import Image from "next/image"
 import Link from "next/link"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { getImageById } from "@/lib/actions/image-actions"
-import type { UserImage } from "@/lib/types"
+import type { UserImage, EnhancementPreferences, PhotoClassification } from "@/lib/types"
+import { DEFAULT_ENHANCEMENT_PREFERENCES } from "@/lib/types"
+import { SingleImagePreferencesModal } from "@/components/single-image-preferences-modal"
 import {
   Loader2,
   Sparkles,
@@ -18,6 +20,7 @@ import {
   AlertCircle,
   FolderOpen,
   ExternalLink,
+  Settings2,
 } from "lucide-react"
 
 // Model config for batch processing (same as single transform)
@@ -50,6 +53,11 @@ export default function BatchTransformPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [overallProgress, setOverallProgress] = useState(0)
   const [startTime, setStartTime] = useState<Date | null>(null)
+  
+  // Custom preferences state
+  const [showPreferencesModal, setShowPreferencesModal] = useState(false)
+  const [customPreferences, setCustomPreferences] = useState<EnhancementPreferences | null>(null)
+  const [hasCustomPreferences, setHasCustomPreferences] = useState(false)
 
   // Load batch image IDs from sessionStorage
   useEffect(() => {
@@ -93,7 +101,37 @@ export default function BatchTransformPage() {
       i === index ? { ...img, status: "processing", progress: 0 } : img
     ))
 
-    const imagePrompt = `Transform this ${batchImage.image.classification || "interior"} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
+    // Generate prompt: use art-director if custom preferences, otherwise use default
+    let imagePrompt: string
+    const classification = batchImage.image.classification || "indoor"
+    
+    if (hasCustomPreferences && customPreferences) {
+      // Call art-director API to generate custom prompt based on preferences
+      try {
+        const artDirectorResponse = await fetch("/api/art-director", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            classification,
+            room_type_guess: batchImage.image.room_type_guess || "",
+            preferences: customPreferences,
+          }),
+        })
+        
+        if (artDirectorResponse.ok) {
+          const artDirectorData = await artDirectorResponse.json()
+          imagePrompt = artDirectorData.prompt || artDirectorData.image_prompt
+        } else {
+          // Fall back to default prompt if art-director fails
+          imagePrompt = `Transform this ${classification} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
+        }
+      } catch {
+        // Fall back to default prompt on error
+        imagePrompt = `Transform this ${classification} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
+      }
+    } else {
+      imagePrompt = `Transform this ${classification} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
+    }
 
     let completedCount = 0
     let variationNumber = 1
@@ -164,7 +202,7 @@ export default function BatchTransformPage() {
     ))
 
     return completedCount > 0
-  }, [profile?.id])
+  }, [profile?.id, hasCustomPreferences, customPreferences])
 
   // Update overall progress when individual images complete
   useEffect(() => {
@@ -289,13 +327,26 @@ export default function BatchTransformPage() {
             </div>
 
             {!isProcessing && !isComplete && (
-              <button
-                onClick={startBatchProcessing}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all"
-              >
-                <Sparkles className="w-5 h-5" />
-                Start Processing
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowPreferencesModal(true)}
+                  className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-all ${
+                    hasCustomPreferences 
+                      ? "border-fuchsia-500 bg-fuchsia-500/10 text-fuchsia-400" 
+                      : "border-slate-600 bg-slate-800 text-slate-300 hover:border-slate-500"
+                  }`}
+                >
+                  <Settings2 className="w-5 h-5" />
+                  {hasCustomPreferences ? "Custom Options Set" : "Customize Options"}
+                </button>
+                <button
+                  onClick={startBatchProcessing}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all"
+                >
+                  <Sparkles className="w-5 h-5" />
+                  Start Processing
+                </button>
+              </div>
             )}
 
             {isComplete && (
@@ -479,6 +530,20 @@ export default function BatchTransformPage() {
           </div>
         )}
       </div>
+
+      {/* Preferences Modal */}
+      <SingleImagePreferencesModal
+        isOpen={showPreferencesModal}
+        onClose={() => setShowPreferencesModal(false)}
+        onConfirm={(preferences) => {
+          setCustomPreferences(preferences)
+          setHasCustomPreferences(true)
+          setShowPreferencesModal(false)
+        }}
+        classification={batchImages[0]?.image?.classification || "indoor"}
+        imageName={`${batchImages.length} images`}
+        initialPreferences={customPreferences || undefined}
+      />
     </div>
   )
 }
