@@ -321,7 +321,8 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
       
       // Check if response looks like an error page (HTML or plain text error)
       if (responseText.startsWith("<!") || responseText.startsWith("<html") || responseText.startsWith("Internal") || responseText.startsWith("Bad")) {
-        console.error(`[v0] OpenAI ${model} returned non-JSON response:`, responseText.substring(0, 200))
+        // Use warn instead of error since we'll retry - this is a recoverable situation
+        console.warn(`[v0] OpenAI ${model} received server error (will retry):`, responseText.substring(0, 100))
         
         // Retry on server errors
         if (retryCount < MAX_RETRIES) {
@@ -343,7 +344,8 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
         throw parseError
       }
       
-      console.error(`[v0] OpenAI ${model} JSON parse error:`, parseError)
+      // Use warn instead of error since we'll retry - this is a recoverable situation  
+      console.warn(`[v0] OpenAI ${model} JSON parse issue (will retry):`, parseError)
       
       // Retry on parse errors (may be transient server issues)
       if (retryCount < MAX_RETRIES) {
