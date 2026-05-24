@@ -35,11 +35,12 @@ export default function Home() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
-            <Link href={isAuthenticated ? "/library" : "/enhance"}>
-              <button className="group relative px-12 py-6 rounded-full gradient-magenta-violet glow-magenta hover:scale-105 transition-all duration-300 text-2xl font-bold text-white shadow-2xl">
-                {isAuthenticated ? "Go to My Library" : "Enhance My Photos"}
-                <ArrowRight className="inline-block ml-2 w-6 h-6 group-hover:translate-x-1 transition-transform" />
-              </button>
+            <Link 
+              href={isAuthenticated ? "/library" : "/enhance"}
+              className="group relative px-12 py-6 rounded-full gradient-magenta-violet glow-magenta hover:scale-105 transition-all duration-300 text-2xl font-bold text-white shadow-2xl"
+            >
+              {isAuthenticated ? "Go to My Library" : "Enhance My Photos"}
+              <ArrowRight className="inline-block ml-2 w-6 h-6 group-hover:translate-x-1 transition-transform" />
             </Link>
 
             <a href="#examples" className="text-[#C9CCDA] hover:text-white transition-colors text-lg underline">
