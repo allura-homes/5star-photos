@@ -114,13 +114,15 @@ export default function BatchTransformPage() {
           body: JSON.stringify({
             classification,
             room_type_guess: batchImage.image.room_type_guess || "",
-            preferences: customPreferences,
+            user_preferences: customPreferences,
+            original_url: batchImage.image.storage_path,
+            filename: batchImage.image.original_filename,
           }),
         })
         
         if (artDirectorResponse.ok) {
           const artDirectorData = await artDirectorResponse.json()
-          imagePrompt = artDirectorData.prompt || artDirectorData.image_prompt
+          imagePrompt = artDirectorData.imagePrompt || artDirectorData.image_prompt || ""
         } else {
           // Fall back to default prompt if art-director fails
           imagePrompt = `Transform this ${classification} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
@@ -130,7 +132,28 @@ export default function BatchTransformPage() {
         imagePrompt = `Transform this ${classification} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
       }
     } else {
-      imagePrompt = `Transform this ${classification} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
+      // No custom preferences - still call art-director for professional prompts
+      try {
+        const artDirectorResponse = await fetch("/api/art-director", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            classification,
+            room_type_guess: batchImage.image.room_type_guess || "",
+            original_url: batchImage.image.storage_path,
+            filename: batchImage.image.original_filename,
+          }),
+        })
+        
+        if (artDirectorResponse.ok) {
+          const artDirectorData = await artDirectorResponse.json()
+          imagePrompt = artDirectorData.imagePrompt || artDirectorData.image_prompt || ""
+        } else {
+          imagePrompt = `Transform this ${classification} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
+        }
+      } catch {
+        imagePrompt = `Transform this ${classification} real estate photo into a professionally enhanced, publication-ready image. Improve lighting, colors, and overall appeal while maintaining photorealistic quality.`
+      }
     }
 
     let completedCount = 0
