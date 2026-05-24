@@ -318,10 +318,44 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
     let data
     try {
       const responseText = await response.text()
+      
+      // Check if response looks like an error page (HTML or plain text error)
+      if (responseText.startsWith("<!") || responseText.startsWith("<html") || responseText.startsWith("Internal") || responseText.startsWith("Bad")) {
+        console.error(`[v0] OpenAI ${model} returned non-JSON response:`, responseText.substring(0, 200))
+        
+        // Retry on server errors
+        if (retryCount < MAX_RETRIES) {
+          const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
+          const jitter = Math.random() * 1000
+          const delay = baseDelay + jitter
+          console.log(`[v0] Server error response, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
+        }
+        
+        throw new Error(`OpenAI returned server error after ${MAX_RETRIES} retries`)
+      }
+      
       data = JSON.parse(responseText)
     } catch (parseError) {
+      // Check if it's already our custom error (from the checks above)
+      if (parseError instanceof Error && parseError.message.includes("server error")) {
+        throw parseError
+      }
+      
       console.error(`[v0] OpenAI ${model} JSON parse error:`, parseError)
-      throw new Error(`OpenAI response was not valid JSON`)
+      
+      // Retry on parse errors (may be transient server issues)
+      if (retryCount < MAX_RETRIES) {
+        const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
+        const jitter = Math.random() * 1000
+        const delay = baseDelay + jitter
+        console.log(`[v0] JSON parse error, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
+      }
+      
+      throw new Error(`OpenAI response was not valid JSON after ${MAX_RETRIES} retries`)
     }
     console.log(`[v0] OpenAI ${model} response received`)
 
