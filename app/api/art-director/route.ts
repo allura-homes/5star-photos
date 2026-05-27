@@ -728,28 +728,57 @@ Return ONLY the JSON object with imagePrompt and debugNotes fields. No markdown,
         })
       }
 
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: "user",
-                parts: parts,
+      // Retry logic with exponential backoff for rate limits
+      const MAX_RETRIES = 3
+      const BASE_DELAY = 2000 // 2 seconds
+      let lastError: Error | null = null
+      
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          // Exponential backoff with jitter
+          const delay = BASE_DELAY * Math.pow(2, attempt - 1) + Math.random() * 1000
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
+        
+        try {
+          response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
               },
-            ],
-            generationConfig: {
-              temperature: 0.3,
-              maxOutputTokens: 2000,
+              body: JSON.stringify({
+                contents: [
+                  {
+                    role: "user",
+                    parts: parts,
+                  },
+                ],
+                generationConfig: {
+                  temperature: 0.3,
+                  maxOutputTokens: 2000,
+                },
+              }),
+              signal: controller.signal,
             },
-          }),
-          signal: controller.signal,
-        },
-      )
+          )
+          
+          // If we get a 429, retry (unless max retries reached)
+          if (response.status === 429 && attempt < MAX_RETRIES) {
+            continue
+          }
+          
+          // Success or non-retryable error - break out of retry loop
+          break
+        } catch (fetchError) {
+          lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError))
+          // Network error - continue to next retry attempt
+          if (attempt === MAX_RETRIES) {
+            throw lastError
+          }
+        }
+      }
     } catch (fetchError) {
       clearTimeout(timeoutId)
       const prefs = user_preferences as EnhancementPreferences | undefined
