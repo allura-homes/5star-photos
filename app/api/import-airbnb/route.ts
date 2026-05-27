@@ -3,8 +3,8 @@ import { createClient } from "@/lib/supabase/server"
 import { put } from "@vercel/blob"
 import { v4 as uuidv4 } from "uuid"
 
-// Browserless.io API endpoint
-const BROWSERLESS_API = "https://chrome.browserless.io"
+// Browserless.io API endpoint - use production endpoint
+const BROWSERLESS_API = "https://production-sfo.browserless.io"
 
 interface ImportResult {
   success: boolean
@@ -18,10 +18,14 @@ interface ImportResult {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  console.log("[v0] Airbnb import API called")
+  
   try {
     const { airbnbUrl, projectId } = await request.json()
+    console.log("[v0] Airbnb import request:", { airbnbUrl, projectId })
 
     if (!airbnbUrl || !airbnbUrl.includes("airbnb.com/rooms/")) {
+      console.log("[v0] Invalid Airbnb URL")
       return NextResponse.json(
         { success: false, error: "Invalid Airbnb URL. Please provide a valid listing URL." },
         { status: 400 }
@@ -30,51 +34,55 @@ export async function POST(request: Request): Promise<Response> {
 
     const apiKey = process.env.BROWSERLESS_API_KEY
     if (!apiKey) {
+      console.error("[v0] BROWSERLESS_API_KEY not configured")
       return NextResponse.json(
         { success: false, error: "Browserless API key not configured" },
         { status: 500 }
       )
     }
+    console.log("[v0] Browserless API key available, length:", apiKey.length)
 
     // Get authenticated user
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
+      console.log("[v0] User not authenticated")
       return NextResponse.json(
         { success: false, error: "Authentication required" },
         { status: 401 }
       )
     }
+    console.log("[v0] User authenticated:", user.id)
 
     console.log("[v0] Starting Airbnb import for:", airbnbUrl)
 
-    // Step 1: Use Browserless to render the page and get full HTML content
-    // Using /content endpoint which is more reliable for scraping
-    const contentResponse = await fetch(`${BROWSERLESS_API}/content?token=${apiKey}`, {
+    // Step 1: Use Browserless /unblock API to bypass Airbnb's bot protection
+    console.log("[v0] Calling Browserless /unblock API...")
+    const contentResponse = await fetch(`${BROWSERLESS_API}/unblock?token=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url: airbnbUrl,
-        gotoOptions: {
-          waitUntil: "networkidle2",
-          timeout: 30000,
-        },
-        waitForSelector: {
-          selector: "img[src*='muscache']",
-          timeout: 10000,
-        },
+        browserWSEndpoint: false,
+        cookies: false,
+        content: true,
+        screenshot: false,
+        waitForTimeout: 5000,
       }),
     })
+    console.log("[v0] Browserless response status:", contentResponse.status)
 
     if (!contentResponse.ok) {
       const errorText = await contentResponse.text()
-      console.error("[v0] Browserless content failed:", errorText)
+      console.error("[v0] Browserless unblock failed:", errorText)
       
-      // Try simpler request without waitForSelector
+      // Try fallback with /content endpoint
       return await fallbackScrape(airbnbUrl, apiKey, user.id, projectId, supabase)
     }
 
-    const html = await contentResponse.text()
+    // /unblock returns JSON with content field
+    const unblockResult = await contentResponse.json()
+    const html = unblockResult.content || ""
     console.log("[v0] Got HTML content, length:", html.length)
 
     // Extract image URLs and listing title from HTML
@@ -108,7 +116,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 }
 
-// Fallback: Use simpler Browserless content API request
+// Fallback: Use /content endpoint without bot protection bypass
 async function fallbackScrape(
   airbnbUrl: string, 
   apiKey: string, 
@@ -116,17 +124,14 @@ async function fallbackScrape(
   projectId: string | null,
   supabase: Awaited<ReturnType<typeof createClient>>
 ): Promise<Response> {
-  console.log("[v0] Trying fallback scrape method...")
+  console.log("[v0] Trying fallback /content method...")
   
   const contentResponse = await fetch(`${BROWSERLESS_API}/content?token=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       url: airbnbUrl,
-      gotoOptions: {
-        waitUntil: "domcontentloaded",
-        timeout: 45000,
-      },
+      waitForTimeout: 5000,
     }),
   })
 
