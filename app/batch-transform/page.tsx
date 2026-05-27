@@ -33,6 +33,32 @@ const BATCH_MODELS = [
   { model: "openai_2", label: "V4" },
 ] as const
 
+// Timeouts for different API calls
+const EDIT_IMAGE_TIMEOUT = 200000 // 200s for image generation (can be slow)
+const ART_DIRECTOR_TIMEOUT = 30000 // 30s for art director
+const SAVE_VARIATION_TIMEOUT = 30000 // 30s for saving
+
+// Helper to create a fetch with timeout
+async function fetchWithTimeout(url: string, options: RequestInit, timeout: number): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    return response
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeout}ms`)
+    }
+    throw error
+  }
+}
+
 type BatchImageStatus = "pending" | "processing" | "complete" | "error"
 
 interface BatchImage {
@@ -108,7 +134,7 @@ export default function BatchTransformPage() {
     if (hasCustomPreferences && customPreferences) {
       // Call art-director API to generate custom prompt based on preferences
       try {
-        const artDirectorResponse = await fetch("/api/art-director", {
+        const artDirectorResponse = await fetchWithTimeout("/api/art-director", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -118,7 +144,7 @@ export default function BatchTransformPage() {
             original_url: batchImage.image.storage_path,
             filename: batchImage.image.original_filename,
           }),
-        })
+        }, ART_DIRECTOR_TIMEOUT)
         
         if (artDirectorResponse.ok) {
           const artDirectorData = await artDirectorResponse.json()
@@ -134,7 +160,7 @@ export default function BatchTransformPage() {
     } else {
       // No custom preferences - still call art-director for professional prompts
       try {
-        const artDirectorResponse = await fetch("/api/art-director", {
+        const artDirectorResponse = await fetchWithTimeout("/api/art-director", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -143,7 +169,7 @@ export default function BatchTransformPage() {
             original_url: batchImage.image.storage_path,
             filename: batchImage.image.original_filename,
           }),
-        })
+        }, ART_DIRECTOR_TIMEOUT)
         
         if (artDirectorResponse.ok) {
           const artDirectorData = await artDirectorResponse.json()
@@ -162,7 +188,7 @@ export default function BatchTransformPage() {
     for (const modelConfig of BATCH_MODELS) {
       try {
         // Call the transform API with correct parameters (matching single transform)
-        const response = await fetch("/api/edit-image", {
+        const response = await fetchWithTimeout("/api/edit-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -175,7 +201,7 @@ export default function BatchTransformPage() {
             image_prompt: imagePrompt,
             use_ai_models: true,
           }),
-        })
+        }, EDIT_IMAGE_TIMEOUT)
         
         variationNumber++
 
@@ -185,7 +211,7 @@ export default function BatchTransformPage() {
           // Auto-save the variation - result may have url or image
           const imageData = result.url || result.image
           if (imageData) {
-            const saveResponse = await fetch("/api/save-variation", {
+            const saveResponse = await fetchWithTimeout("/api/save-variation", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -195,7 +221,7 @@ export default function BatchTransformPage() {
                 transformationPrompt: imagePrompt,
                 userId: profile.id,
               }),
-            })
+            }, SAVE_VARIATION_TIMEOUT)
             
             if (saveResponse.ok) {
               completedCount++
