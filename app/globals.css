@@ -90,15 +90,12 @@
     @apply border-border outline-ring/50;
   }
   body {
-    /* Removed overflow-hidden to allow page scrolling */
     @apply bg-background text-foreground;
-    /* Added the exact gradient background from requirements */
     background: radial-gradient(circle at top left, #FF3EDB 0%, #6A1FBF 35%, #2F7BFF 60%, #16B2A5 100%);
     background-attachment: fixed;
   }
 }
 
-/* Updated glassmorphism utilities for CleanMyMac style */
 @layer utilities {
   .glass-card {
     @apply backdrop-blur-2xl bg-white/10 border border-white/15 shadow-xl;
@@ -132,7 +129,6 @@
     background: linear-gradient(135deg, #2F7BFF 0%, #16B2A5 100%);
   }
   
-  /* Added gradient text utility */
   .gradient-text {
     background: linear-gradient(135deg, #FF3EDB 0%, #2F7BFF 100%);
     -webkit-background-clip: text;
