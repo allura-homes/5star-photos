@@ -10,6 +10,7 @@ import type { UserImage, PhotoClassification, Project } from "@/lib/types"
 import { TOKEN_COSTS } from "@/lib/constants/tokens"
 import { v4 as uuidv4 } from "uuid"
 import { loadPendingFiles, clearPendingFiles } from "@/lib/pending-files-storage"
+import { useAuthContext } from "@/lib/contexts/auth-context"
 
 // Model to user-friendly label mapping (matches transform page)
 const MODEL_LABELS: Record<string, string> = {
@@ -91,6 +92,7 @@ function classifyFromFilename(filename: string): PhotoClassification {
 
 export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, setTokenBalance = () => {} }: ImageLibraryProps) {
   const router = useRouter()
+  const { isAuthenticated, isLoading: authLoading, user } = useAuthContext()
   const [images, setImages] = useState<UserImage[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expandedImages, setExpandedImages] = useState<Set<string>>(new Set())
@@ -114,10 +116,14 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  // Only load images once auth is confirmed
   useEffect(() => {
+    if (authLoading) return
+    if (!isAuthenticated || !user) return
+    
     loadImages()
     loadProjects()
-  }, [])
+  }, [authLoading, isAuthenticated, user])
   
   async function loadProjects() {
     const { projects: data } = await getUserProjects()
@@ -171,7 +177,8 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     setIsLoading(true)
     setLoadError(null)
     try {
-      const { images: fetchedImages, error } = await getUserImages()
+      // Pass userId directly to bypass server-side cookie auth issues
+      const { images: fetchedImages, error } = await getUserImages(user?.id)
       if (error) {
         console.error("[v0] Load images error:", error)
         setLoadError(error)

@@ -10,26 +10,31 @@ function safeRevalidate(_path: string) {
 }
 
 // Get all images for the current user (originals only, with variations nested)
-export async function getUserImages(): Promise<{ images: UserImage[]; error?: string }> {
+// If userId is provided, use it directly (for client-side auth); otherwise check session
+export async function getUserImages(userId?: string): Promise<{ images: UserImage[]; error?: string }> {
   try {
     const supabase = await createClient()
 
-    // Use getSession() instead of getUser() - it doesn't throw on missing session
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    let effectiveUserId = userId
     
-    if (!session?.user) {
-      return { images: [], error: "Not authenticated" }
+    // If no userId provided, try to get from session
+    if (!effectiveUserId) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      
+      if (!session?.user) {
+        return { images: [], error: "Not authenticated" }
+      }
+      
+      effectiveUserId = session.user.id
     }
-    
-    const user = session.user
 
     // Fetch all user images
     const { data: allImages, error } = await supabase
       .from("images")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", effectiveUserId)
       .order("created_at", { ascending: false })
 
     if (error) {
