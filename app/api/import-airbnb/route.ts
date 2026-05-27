@@ -6,6 +6,30 @@ import { v4 as uuidv4 } from "uuid"
 // Browserless.io API endpoint - use production endpoint
 const BROWSERLESS_API = "https://production-sfo.browserless.io"
 
+// Timeout for fetch requests (30 seconds)
+const FETCH_TIMEOUT = 30000
+
+// Helper to create a fetch with timeout
+async function fetchWithTimeout(url: string, options: RequestInit, timeout: number = FETCH_TIMEOUT): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    return response
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeout}ms`)
+    }
+    throw error
+  }
+}
+
 interface ImportResult {
   success: boolean
   images: Array<{
@@ -58,7 +82,7 @@ export async function POST(request: Request): Promise<Response> {
 
     // Step 1: Use Browserless /unblock API to bypass Airbnb's bot protection
     console.log("[v0] Calling Browserless /unblock API...")
-    const contentResponse = await fetch(`${BROWSERLESS_API}/unblock?token=${apiKey}`, {
+    const contentResponse = await fetchWithTimeout(`${BROWSERLESS_API}/unblock?token=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -69,7 +93,7 @@ export async function POST(request: Request): Promise<Response> {
         screenshot: false,
         waitForTimeout: 5000,
       }),
-    })
+    }, 45000) // 45 second timeout for Browserless
     console.log("[v0] Browserless response status:", contentResponse.status)
 
     if (!contentResponse.ok) {
@@ -126,14 +150,14 @@ async function fallbackScrape(
 ): Promise<Response> {
   console.log("[v0] Trying fallback /content method...")
   
-  const contentResponse = await fetch(`${BROWSERLESS_API}/content?token=${apiKey}`, {
+  const contentResponse = await fetchWithTimeout(`${BROWSERLESS_API}/content?token=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       url: airbnbUrl,
       waitForTimeout: 5000,
     }),
-  })
+  }, 45000) // 45 second timeout
 
   if (!contentResponse.ok) {
     const errorText = await contentResponse.text()
@@ -310,14 +334,14 @@ async function uploadImages(
         try {
           console.log(`[v0] Downloading image ${index}: ${imageUrl.substring(0, 80)}...`)
           
-          // Download image
-          const imageResponse = await fetch(imageUrl, {
+          // Download image with timeout
+          const imageResponse = await fetchWithTimeout(imageUrl, {
             headers: {
               "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
               "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
               "Referer": "https://www.airbnb.com/",
             },
-          })
+          }, 15000) // 15 second timeout for image download
           
           if (!imageResponse.ok) {
             console.error(`[v0] Failed to download image ${index}: status ${imageResponse.status}`)
