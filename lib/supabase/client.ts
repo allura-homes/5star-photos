@@ -17,8 +17,18 @@ export function createClient(): SupabaseClient {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-  const client = createBrowserClient(supabaseUrl, supabaseAnonKey)
-  
+  const client = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      // The default @supabase/ssr browser client uses the Web Locks API
+      // (navigator.locks) to serialize access to the auth token. Inside
+      // sandboxed iframes (v0 preview, some embeds) lock acquisition can
+      // hang forever, which causes getUser()/signInWithPassword() to never
+      // resolve. Override with a no-op lock that just runs the callback so
+      // auth calls never block on navigator.locks.
+      lock: async (_name, _acquireTimeout, fn) => fn(),
+    },
+  })
+
   // Store on window for persistence
   if (typeof window !== "undefined") {
     window.__supabaseClient = client
