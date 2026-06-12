@@ -227,13 +227,27 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
     let imageBuffer = Buffer.from(await imageResponse.arrayBuffer())
     console.log("[v0] Original image fetched, size:", imageBuffer.byteLength)
 
-    // Compress if too large (OpenAI images/edits has 4MB limit per image)
-    const MAX_SIZE = 4 * 1024 * 1024
-    if (imageBuffer.byteLength > MAX_SIZE) {
-      console.log("[v0] Image too large, compressing...")
-      const compressed = await compressImageFromUrl(originalUrl, MAX_SIZE)
-      imageBuffer = Buffer.from(await compressed.arrayBuffer())
-      console.log("[v0] Compressed image size:", imageBuffer.byteLength)
+    // OpenAI's images/edits endpoint only accepts PNG, WEBP, and JPG, and it
+    // validates the ACTUAL file bytes against the declared format. The source
+    // image may be JPEG, WebP, HEIC, or something else, and previously we always
+    // relabeled the raw bytes as "image/png" - a mismatch (or an unsupported
+    // format like HEIC) causes the "invalid_image_file" 400 error.
+    //
+    // To guarantee a valid, supported file we always transcode the source to
+    // JPEG via Cloudinary (which also enforces the size limit), then send it
+    // with the matching MIME type and filename.
+    const MAX_SIZE = 4 * 1024 * 1024 // 4MB limit for images/edits
+    try {
+      const normalized = await compressImageFromUrl(originalUrl, MAX_SIZE)
+      imageBuffer = Buffer.from(await normalized.arrayBuffer())
+      console.log("[v0] Normalized image to JPEG, size:", imageBuffer.byteLength)
+    } catch (normalizeError) {
+      // If transcoding fails, fall back to the raw bytes but only proceed if
+      // they are already a supported format; otherwise surface a clear error.
+      console.log("[v0] Image normalization failed, falling back to raw bytes:", normalizeError)
+      if (imageBuffer.byteLength > MAX_SIZE) {
+        throw new Error("Image is too large and could not be compressed for editing")
+      }
     }
 
     console.log(`[v0] Using OpenAI ${model} with Images Edits API`)
@@ -241,9 +255,10 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 180000)
 
-    // Create form data for the images/edits endpoint
+    // Create form data for the images/edits endpoint.
+    // Declare the JPEG MIME type/extension to match the transcoded bytes.
     const formData = new FormData()
-    formData.append("image", new Blob([imageBuffer], { type: "image/png" }), "image.png")
+    formData.append("image", new Blob([imageBuffer], { type: "image/jpeg" }), "image.jpg")
     formData.append("prompt", editingPrompt)
     formData.append("model", model)
     formData.append("n", "1")
