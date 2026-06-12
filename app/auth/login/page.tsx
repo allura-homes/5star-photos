@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/client"
+import { createClient, clearAuthState } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,8 +21,6 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect") || "/library"
 
-  const supabase = createClient()
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -30,8 +28,28 @@ function LoginForm() {
 
     // Trim whitespace from email (common issue on mobile keyboards)
     const trimmedEmail = email.trim().toLowerCase()
-    
-    const { data, error } = await supabase.auth.signInWithPassword({
+
+    // A session left in localStorage from a previous visit may contain an
+    // expired refresh token (the "spins after a week of inactivity" bug).
+    // GoTrue will get stuck trying to auto-refresh it and the new sign-in
+    // call hangs forever. Proactively check for an expired session and wipe
+    // it so signInWithPassword always starts from a clean slate.
+    let supabase = createClient()
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const expiresAt = session?.expires_at ? session.expires_at * 1000 : 0
+      if (session && expiresAt && expiresAt < Date.now()) {
+        await supabase.auth.signOut().catch(() => {})
+        clearAuthState()
+        supabase = createClient()
+      }
+    } catch {
+      // If reading the session itself errors, clear and rebuild defensively.
+      clearAuthState()
+      supabase = createClient()
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
       email: trimmedEmail,
       password,
     })
@@ -42,12 +60,13 @@ function LoginForm() {
       return
     }
 
-    // Wait for auth state change to propagate and session to be stored
+    // Wait for auth state change to propagate and session to be stored,
+    // but never block the UI for more than 2s.
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         resolve()
       }, 2000)
-      
+
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === "SIGNED_IN" && session) {
           clearTimeout(timeout)
@@ -56,7 +75,7 @@ function LoginForm() {
         }
       })
     })
-    
+
     // Use router.push for client-side navigation (preserves auth context)
     router.push(redirect)
   }
@@ -65,6 +84,7 @@ function LoginForm() {
     setIsLoading(true)
     setError(null)
 
+    const supabase = createClient()
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
