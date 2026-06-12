@@ -278,9 +278,12 @@ export default function BatchTransformPage() {
     setIsProcessing(true)
     setStartTime(new Date())
 
-    // Process images in parallel, but stagger the starts to avoid overwhelming APIs
-    // Process in batches of 3 at a time to stay under rate limits
-    const CONCURRENT_LIMIT = 3
+    // Process images in parallel, but stagger the starts to avoid overwhelming APIs.
+    // CONCURRENT_LIMIT caps how many images are in-flight at once. This is bounded by
+    // external API rate limits (Gemini Art Director RPM + OpenAI image edits), NOT by
+    // our own code. Pushing this too high causes 429 "Resource Exhausted" errors that
+    // fail the batch. 6 is a safe balance between throughput and staying under quotas.
+    const CONCURRENT_LIMIT = 6
     const STAGGER_DELAY = 500 // 500ms between starting each image
     
     const processWithStagger = async (batchImage: BatchImage, index: number) => {

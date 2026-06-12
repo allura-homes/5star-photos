@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/client"
+import { createClient, clearAuthState } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -23,12 +23,26 @@ function SignupForm() {
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect") || "/library"
 
-  const supabase = createClient()
-
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+
+    // Discard any stale/expired session left in storage before signing up,
+    // otherwise GoTrue can hang trying to auto-refresh a dead token.
+    let supabase = createClient()
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const expiresAt = session?.expires_at ? session.expires_at * 1000 : 0
+      if (session && expiresAt && expiresAt < Date.now()) {
+        await supabase.auth.signOut().catch(() => {})
+        clearAuthState()
+        supabase = createClient()
+      }
+    } catch {
+      clearAuthState()
+      supabase = createClient()
+    }
 
     const { error } = await supabase.auth.signUp({
       email,
@@ -57,6 +71,8 @@ function SignupForm() {
   const handleGoogleSignup = async () => {
     setIsLoading(true)
     setError(null)
+
+    const supabase = createClient()
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",

@@ -111,7 +111,12 @@ export function useAuth() {
     setState((prev) => ({ ...prev, isLoading: true }))
 
     try {
-      const { data: { user }, error } = await supabase.auth.getUser()
+      // Use getSession() instead of getUser(): getSession reads the session
+      // synchronously from local storage and never makes a network request,
+      // so it cannot hang. getUser() hits /auth/v1/user over the network and
+      // stalls inside sandboxed iframes (v0 preview), causing infinite spinners.
+      const { data: { session }, error } = await supabase.auth.getSession()
+      const user = session?.user ?? null
 
       if (error) {
         if (isRefreshTokenError(error)) {
@@ -205,10 +210,14 @@ export function useAuth() {
     // Initial auth check
     const checkAuth = async () => {
       try {
-        const { data: { user }, error } = await supabase.auth.getUser()
-        
+        // Use getSession() (synchronous, reads local storage) instead of
+        // getUser() (network call) so the initial check can never hang inside
+        // sandboxed iframes like the v0 preview.
+        const { data: { session }, error } = await supabase.auth.getSession()
+        const user = session?.user ?? null
+
         if (!isMounted) return
-        
+
         if (error && isRefreshTokenError(error)) {
           clearAuthState()
           setUnauthenticated()
