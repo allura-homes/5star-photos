@@ -13,6 +13,28 @@ function isRefreshTokenError(error: unknown): boolean {
          message.includes("Refresh Token Not Found")
 }
 
+// Race a promise against a timeout. Used to guard Supabase auth/DB calls that
+// can hang indefinitely inside the sandboxed v0 preview iframe (the auth token
+// auto-refresh and PostgREST queries both stall on the Web Locks API there).
+// Returns `fallback` if the promise doesn't settle within `ms`.
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ])
+}
+
+// A session is considered expired (or about to expire) when its expires_at is
+// at or before now (with a small skew buffer). getSession() auto-refreshes an
+// expired access token via the network BEFORE returning, and that refresh is
+// what hangs after a long period of inactivity - so we detect this and bail to
+// a clean unauthenticated state instead of waiting on the stuck refresh.
+function isSessionExpired(session: { expires_at?: number } | null | undefined): boolean {
+  if (!session?.expires_at) return false
+  const expiresAtMs = session.expires_at * 1000
+  return expiresAtMs <= Date.now() + 5000
+}
+
 export type UserRole = "viewer" | "user" | "admin"
 
 export interface UserProfile {
@@ -111,15 +133,16 @@ export function useAuth() {
     setState((prev) => ({ ...prev, isLoading: true }))
 
     try {
-      // Use getSession() instead of getUser(): getSession reads the session
-      // synchronously from local storage and never makes a network request,
-      // so it cannot hang. getUser() hits /auth/v1/user over the network and
-      // stalls inside sandboxed iframes (v0 preview), causing infinite spinners.
-      const { data: { session }, error } = await supabase.auth.getSession()
-      const user = session?.user ?? null
+      // Race getSession against a timeout: it auto-refreshes an expired token
+      // over the network, which can hang in the preview iframe. See checkAuth.
+      const { data: { session }, error } = await withTimeout(
+        supabase.auth.getSession(),
+        4000,
+        { data: { session: null }, error: null } as Awaited<ReturnType<typeof supabase.auth.getSession>>,
+      )
 
-      if (error) {
-        if (isRefreshTokenError(error)) {
+      if (error || (session && isSessionExpired(session))) {
+        if (error ? isRefreshTokenError(error) : true) {
           clearAuthState()
         }
         setState({
@@ -134,8 +157,10 @@ export function useAuth() {
         return
       }
 
+      const user = session?.user ?? null
+
       if (user) {
-        const profile = await fetchProfile(user.id)
+        const profile = await withTimeout(fetchProfile(user.id), 4000, null)
         setState({
           user,
           profile,
@@ -210,11 +235,16 @@ export function useAuth() {
     // Initial auth check
     const checkAuth = async () => {
       try {
-        // Use getSession() (synchronous, reads local storage) instead of
-        // getUser() (network call) so the initial check can never hang inside
-        // sandboxed iframes like the v0 preview.
-        const { data: { session }, error } = await supabase.auth.getSession()
-        const user = session?.user ?? null
+        // getSession() reads from local storage but will auto-refresh an
+        // EXPIRED access token over the network before returning. That refresh
+        // hangs inside the preview iframe after a long period of inactivity, so
+        // we race it against a short timeout. If it doesn't settle, we treat the
+        // user as unauthenticated rather than spinning forever.
+        const { data: { session }, error } = await withTimeout(
+          supabase.auth.getSession(),
+          4000,
+          { data: { session: null }, error: null } as Awaited<ReturnType<typeof supabase.auth.getSession>>,
+        )
 
         if (!isMounted) return
 
@@ -223,9 +253,22 @@ export function useAuth() {
           setUnauthenticated()
           return
         }
-        
+
+        // Proactively discard a stale/expired session so GoTrue never gets
+        // stuck trying to auto-refresh a dead token (the "spins after a week"
+        // bug). This guarantees a clean slate for the next login attempt.
+        if (session && isSessionExpired(session)) {
+          clearAuthState()
+          setUnauthenticated()
+          return
+        }
+
+        const user = session?.user ?? null
+
         if (user) {
-          const profile = await fetchProfile(user.id)
+          // Guard the profile query too - a hanging DB call must not block auth
+          // from resolving. Worst case the user is authenticated with no profile.
+          const profile = await withTimeout(fetchProfile(user.id), 4000, null)
           setAuthenticated(user, profile)
         } else {
           setUnauthenticated()
@@ -255,7 +298,7 @@ export function useAuth() {
       }
 
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        const profile = await fetchProfile(session.user.id)
+        const profile = await withTimeout(fetchProfile(session.user.id), 4000, null)
         setAuthenticated(session.user, profile)
       }
     })
