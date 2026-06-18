@@ -14,8 +14,21 @@ export function createClient(): SupabaseClient {
     return window.__supabaseClient
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // NEXT_PUBLIC_* env vars are inlined into the client bundle at build time.
+  // If they are missing/empty here, the bundle was built before the Supabase
+  // env vars were available (common right after a fresh git pull) - the fix is
+  // to rebuild/refresh the preview. Throw a clear, actionable error instead of
+  // the cryptic "@supabase/ssr: Your project's URL and API key are required".
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "Supabase environment variables are missing from the client bundle. " +
+        "NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are inlined at build time, " +
+        "so refresh/rebuild the preview to pick them up. If this persists, verify they are set in Project Settings > Vars.",
+    )
+  }
 
   const client = createBrowserClient(supabaseUrl, supabaseAnonKey, {
     auth: {

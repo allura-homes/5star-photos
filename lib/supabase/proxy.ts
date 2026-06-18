@@ -32,20 +32,30 @@ export async function updateSession(request: NextRequest) {
       },
     },
     auth: {
-      // Disable lock to prevent "Lock was released because another request stole it" errors
-      // This is safe in middleware since each request is independent
       detectSessionInUrl: false,
-      persistSession: false,
-      autoRefreshToken: false,
+      // NOTE: We intentionally do NOT set autoRefreshToken/persistSession to
+      // false here. This middleware is the durable fix for the recurring
+      // "login spins forever after a week of inactivity" bug. By letting the
+      // server refresh an expired access token (using the still-valid refresh
+      // token) and writing the fresh tokens back via the setAll cookie handler,
+      // the browser client always loads an already-valid session. That avoids
+      // the client-side network token refresh, which hangs inside the sandboxed
+      // v0 preview iframe and causes the infinite spinner.
     },
   })
 
   // IMPORTANT: Do not run code between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
-  // issues with users being randomly logged out.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // supabase.auth.getUser(). getUser() is what triggers the server-side token
+  // refresh; the refreshed tokens are persisted by the setAll handler above.
+  // Wrapped in try/catch so a transient auth/network error in middleware can
+  // never throw a 500 and block the whole app - we just treat it as no user.
+  let user = null
+  try {
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+  } catch (error) {
+    console.log("[v0] middleware getUser failed, treating as unauthenticated:", error)
+  }
 
   // Protected routes that require authentication
   // Note: Most routes handle auth client-side via useAuthContext

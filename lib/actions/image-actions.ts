@@ -298,14 +298,20 @@ export async function uploadImage(
     const publicUrl = await uploadToStorage(base64Data, storagePath, fileType || "image/jpeg")
     console.log("[v0] uploadImage: Upload successful, URL:", publicUrl?.substring(0, 80) + "...")
 
-    // Deduct token after successful upload
-    const { error: tokenError } = await supabase
-      .from("profiles")
-      .update({ tokens: profile.tokens - 1 })
-      .eq("id", user.id)
+    // Deduct token after successful upload.
+    // Token enforcement is currently disabled, and the user may not have a
+    // profiles row yet (profile === null), so only deduct when a balance
+    // actually exists. This prevents the "Cannot read properties of null
+    // (reading 'tokens')" crash.
+    if (profile && typeof profile.tokens === "number") {
+      const { error: tokenError } = await supabase
+        .from("profiles")
+        .update({ tokens: profile.tokens - 1 })
+        .eq("id", user.id)
 
-    if (tokenError) {
-      return { image: null, error: "Failed to deduct token" }
+      if (tokenError) {
+        return { image: null, error: "Failed to deduct token" }
+      }
     }
 
     // Create image record
@@ -327,8 +333,10 @@ export async function uploadImage(
       .single()
 
     if (error) {
-      // Refund token on failure
-      await supabase.from("profiles").update({ tokens: profile.tokens }).eq("id", user.id)
+      // Refund token on failure (only if a balance was deducted above)
+      if (profile && typeof profile.tokens === "number") {
+        await supabase.from("profiles").update({ tokens: profile.tokens }).eq("id", user.id)
+      }
       return { image: null, error: error.message }
     }
 
