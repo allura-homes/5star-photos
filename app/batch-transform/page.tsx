@@ -73,7 +73,7 @@ interface BatchImage {
 
 export default function BatchTransformPage() {
   const router = useRouter()
-  const { profile } = useAuthContext()
+  const { profile, user } = useAuthContext()
   const [batchImages, setBatchImages] = useState<BatchImage[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -121,7 +121,26 @@ export default function BatchTransformPage() {
 
   // Process a single image
   const processImage = useCallback(async (batchImage: BatchImage, index: number) => {
-    if (!batchImage.image || !profile?.id) return
+    // Resolve a reliable user id. Do NOT depend solely on profile?.id: the
+    // profile row can be null (missing profiles row, or fetchProfile timed out),
+    // in which case the auth user is still available, and the image itself
+    // carries its owner's user_id. If we bailed silently here (the old bug), the
+    // image would stay "pending" forever and the whole batch would hang at 0%.
+    const userId = profile?.id ?? user?.id ?? batchImage.image?.user_id ?? null
+
+    if (!batchImage.image || !userId) {
+      // Mark as error instead of returning silently so the batch can complete
+      // and the completion effect can stop the spinner.
+      setBatchImages(prev => prev.map((img, i) =>
+        i === index ? {
+          ...img,
+          status: "error",
+          progress: 100,
+          error: !batchImage.image ? "Image failed to load" : "Not signed in - please refresh and sign in again",
+        } : img
+      ))
+      return false
+    }
 
     setBatchImages(prev => prev.map((img, i) => 
       i === index ? { ...img, status: "processing", progress: 0 } : img
@@ -219,7 +238,7 @@ export default function BatchTransformPage() {
                 imageData: imageData,
                 sourceModel: modelConfig.model,
                 transformationPrompt: imagePrompt,
-                userId: profile.id,
+                userId: userId,
               }),
             }, SAVE_VARIATION_TIMEOUT)
             
@@ -251,7 +270,7 @@ export default function BatchTransformPage() {
     ))
 
     return completedCount > 0
-  }, [profile?.id, hasCustomPreferences, customPreferences])
+  }, [profile?.id, user?.id, hasCustomPreferences, customPreferences])
 
   // Update overall progress when individual images complete
   useEffect(() => {
