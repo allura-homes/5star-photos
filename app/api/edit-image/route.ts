@@ -278,10 +278,22 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
       })
     } catch (fetchError) {
       clearTimeout(timeoutId)
+      const message = fetchError instanceof Error ? fetchError.message : "Unknown error"
       console.error(`[v0] OpenAI ${model} fetch error:`, fetchError)
-      
-      // Retry on network errors with exponential backoff and jitter
-      if (retryCount < MAX_RETRIES) {
+
+      // FAIL FAST on "Failed to fetch" network errors. Retrying these 5x with
+      // exponential backoff (3s->6s->12s->24s->48s) wastes ~90s+ per image and
+      // makes the whole batch appear to hang at 0%. A "Failed to fetch" means
+      // the request never reached OpenAI (e.g. an unreachable/not-yet-available
+      // model like gpt-image-2), which will not recover on immediate retry -
+      // so we skip retries and let the batch continue with the working models.
+      // (Aborts from our own timeout are treated the same - fail fast.)
+      const isFailedToFetch =
+        message.includes("Failed to fetch") ||
+        message.includes("fetch failed") ||
+        (fetchError instanceof Error && fetchError.name === "AbortError")
+
+      if (!isFailedToFetch && retryCount < MAX_RETRIES) {
         const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
         const jitter = Math.random() * 1000 // Add up to 1 second of random jitter
         const delay = baseDelay + jitter
@@ -289,8 +301,8 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
         await new Promise(resolve => setTimeout(resolve, delay))
         return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
       }
-      
-      throw new Error(`OpenAI API network error after ${MAX_RETRIES} retries: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`)
+
+      throw new Error(`OpenAI API network error (${model}): ${message}`)
     }
 
     clearTimeout(timeoutId)
