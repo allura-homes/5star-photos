@@ -56,8 +56,9 @@ const MODEL_CONFIG: { model: ModelProvider; label: string }[] = [
   { model: "nano_banana_pro", label: "V2" },
   // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
   // { model: "flux_2_pro", label: "V3" },
-  // DISABLED 2026-07-13: openai_2 (V4/gpt-image-2) - model not reachable
-  // { model: "openai_2", label: "V4" },
+  // RE-ENABLED 2026-07-13 by user request: openai_2 (V4/gpt-image-2).
+  // May still fail fast with "Failed to fetch" if not reachable.
+  { model: "openai_2", label: "V4" },
 ]
 
 export default function TransformPage() {

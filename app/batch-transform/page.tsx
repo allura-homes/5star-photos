@@ -40,8 +40,10 @@ const BATCH_MODELS = [
   { model: "nano_banana_pro", label: "V2" },
   // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
   // { model: "flux_2_pro", label: "V3" },
-  // DISABLED 2026-07-13: openai_2 (V4/gpt-image-2) - model not reachable ("Failed to fetch")
-  // { model: "openai_2", label: "V4" },
+  // RE-ENABLED 2026-07-13 by user request: openai_2 (V4/gpt-image-2).
+  // NOTE: this model may still fail with "Failed to fetch" (not reachable);
+  // it fails fast and the batch still returns V1/V2, just with a V4 error.
+  { model: "openai_2", label: "V4" },
 ] as const
 
 // Timeouts for different API calls
