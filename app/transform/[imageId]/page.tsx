@@ -45,12 +45,19 @@ interface PreviewVariation {
   error?: string
 }
 
+// APPROVED, tested models per MODEL_CONFIGURATION.md (kept in sync with
+// BATCH_MODELS in /app/batch-transform/page.tsx):
+//   V1 = "openai"          -> gpt-image-1
+//   V2 = "nano_banana_pro" -> gemini-3-pro-image-preview
+// DISABLED 2026-07-13: openai_1_5 / openai_2 (gpt-image-1.5 / gpt-image-2)
+// were failing with "Failed to fetch" - those model names are not reachable.
 const MODEL_CONFIG: { model: ModelProvider; label: string }[] = [
-  { model: "openai_1_5", label: "V1" },
+  { model: "openai", label: "V1" },
   { model: "nano_banana_pro", label: "V2" },
   // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
   // { model: "flux_2_pro", label: "V3" },
-  { model: "openai_2", label: "V4" },
+  // DISABLED 2026-07-13: openai_2 (V4/gpt-image-2) - model not reachable
+  // { model: "openai_2", label: "V4" },
 ]
 
 export default function TransformPage() {

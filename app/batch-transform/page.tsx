@@ -24,13 +24,24 @@ import {
 } from "lucide-react"
 
 // Model config for batch processing (same as single transform)
-// Provider values must match what edit-image API expects
+// Provider values must match what edit-image API expects.
+//
+// These are the APPROVED, tested models per MODEL_CONFIGURATION.md:
+//   V1 = "openai"          -> gpt-image-1              (approved)
+//   V2 = "nano_banana_pro" -> gemini-3-pro-image-preview (approved)
+//
+// NOTE (2026-07-13): The unverified "openai_1_5" (gpt-image-1.5) and
+// "openai_2" (gpt-image-2) providers were failing with "Failed to fetch"
+// because those model names are not reachable. Reverted V1 to the approved
+// "openai"/gpt-image-1 and removed the failing V4 slot so batches complete
+// reliably. Re-add these only after the models are verified + approved.
 const BATCH_MODELS = [
-  { model: "openai_1_5", label: "V1" },
+  { model: "openai", label: "V1" },
   { model: "nano_banana_pro", label: "V2" },
   // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
   // { model: "flux_2_pro", label: "V3" },
-  { model: "openai_2", label: "V4" },
+  // DISABLED 2026-07-13: openai_2 (V4/gpt-image-2) - model not reachable ("Failed to fetch")
+  // { model: "openai_2", label: "V4" },
 ] as const
 
 // Timeouts for different API calls
