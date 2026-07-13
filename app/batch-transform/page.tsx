@@ -23,26 +23,22 @@ import {
   Settings2,
 } from "lucide-react"
 
-// Model config for batch processing (same as single transform)
-// Provider values must match what edit-image API expects.
+// Model config for batch processing (same as single transform).
+// Provider values must match what the edit-image API expects.
+//   V1 = "openai"          -> gpt-image-1
+//   V2 = "nano_banana_pro" -> gemini-3-pro-image-preview
+//   V4 = "openai_2"        -> gpt-image-2
 //
-// These are the APPROVED, tested models per MODEL_CONFIGURATION.md:
-//   V1 = "openai"          -> gpt-image-1              (approved)
-//   V2 = "nano_banana_pro" -> gemini-3-pro-image-preview (approved)
-//
-// NOTE (2026-07-13): The unverified "openai_1_5" (gpt-image-1.5) and
-// "openai_2" (gpt-image-2) providers were failing with "Failed to fetch"
-// because those model names are not reachable. Reverted V1 to the approved
-// "openai"/gpt-image-1 and removed the failing V4 slot so batches complete
-// reliably. Re-add these only after the models are verified + approved.
+// NOTE (2026-07-13): gpt-image-2 is a real OpenAI model, but it can fail with
+// "Failed to fetch" if this project's OpenAI key/org has not been granted
+// access to it (gpt-image-1 works on the same key). When that happens the V4
+// variation fails and only V1/V2 get saved. Access must be enabled in the
+// OpenAI dashboard for the key used by this project. All 4 slots stay enabled.
 const BATCH_MODELS = [
   { model: "openai", label: "V1" },
   { model: "nano_banana_pro", label: "V2" },
   // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
   // { model: "flux_2_pro", label: "V3" },
-  // RE-ENABLED 2026-07-13 by user request: openai_2 (V4/gpt-image-2).
-  // NOTE: this model may still fail with "Failed to fetch" (not reachable);
-  // it fails fast and the batch still returns V1/V2, just with a V4 error.
   { model: "openai_2", label: "V4" },
 ] as const
 
@@ -80,6 +76,10 @@ interface BatchImage {
   status: BatchImageStatus
   progress: number // 0-100
   error?: string
+  // Per-model failure reasons (e.g. "V4: <OpenAI error>"). Surfaced so a model
+  // that fails to save (like gpt-image-2 without account access) is visible
+  // instead of being silently dropped.
+  modelErrors?: string[]
   completedVariations: number
   totalVariations: number
 }
@@ -216,6 +216,7 @@ export default function BatchTransformPage() {
 
     let completedCount = 0
     let variationNumber = 1
+    const modelErrors: string[] = []
 
     for (const modelConfig of BATCH_MODELS) {
       try {
@@ -257,17 +258,32 @@ export default function BatchTransformPage() {
             
             if (saveResponse.ok) {
               completedCount++
+            } else {
+              const saveErr = await saveResponse.text().catch(() => "")
+              modelErrors.push(`${modelConfig.label}: save failed - ${saveErr.slice(0, 200) || saveResponse.status}`)
             }
+          } else {
+            modelErrors.push(`${modelConfig.label}: no image returned`)
           }
+        } else {
+          // Surface the real reason this model failed (e.g. OpenAI 403 "must be
+          // verified to use gpt-image-2") instead of silently dropping it.
+          const errText = await response.text().catch(() => "")
+          const reason = errText.slice(0, 200) || `HTTP ${response.status}`
+          modelErrors.push(`${modelConfig.label}: ${reason}`)
+          console.log(`[v0] batch model ${modelConfig.label} (${modelConfig.model}) failed:`, reason)
         }
-      } catch {
-        // Continue with other models even if one fails
+      } catch (err) {
+        // Continue with other models even if one fails, but record why.
+        const reason = err instanceof Error ? err.message : "unknown error"
+        modelErrors.push(`${modelConfig.label}: ${reason}`)
+        console.log(`[v0] batch model ${modelConfig.label} (${modelConfig.model}) threw:`, reason)
       }
 
       // Update progress for this image
       const progress = Math.round(((completedCount) / BATCH_MODELS.length) * 100)
       setBatchImages(prev => prev.map((img, i) => 
-        i === index ? { ...img, progress, completedVariations: completedCount } : img
+        i === index ? { ...img, progress, completedVariations: completedCount, modelErrors: [...modelErrors] } : img
       ))
     }
 
@@ -568,6 +584,21 @@ export default function BatchTransformPage() {
                     />
                   </div>
                 )}
+
+                {/* Per-model failures (e.g. a model that couldn't save a
+                    variation). Shown so partial results aren't a mystery. */}
+                {batchImage.status !== "processing" &&
+                  batchImage.status !== "pending" &&
+                  batchImage.modelErrors &&
+                  batchImage.modelErrors.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5">
+                      {batchImage.modelErrors.map((modelError, i) => (
+                        <li key={i} className="text-xs text-amber-400/90 truncate" title={modelError}>
+                          {modelError}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
               </div>
 
               {/* Action */}
