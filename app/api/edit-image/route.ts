@@ -329,12 +329,19 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
       
       console.error(`[v0] OpenAI ${model} response error (${response.status}):`, errorText.substring(0, 300))
       
-      // Handle rate limiting with retry
-      if (response.status === 429 && retryCount < MAX_RETRIES) {
+      // Retry on transient errors: 429 rate limits AND 5xx gateway/server
+      // errors (e.g. 502 Bad Gateway, 503, 504, 500 from OpenAI/Cloudflare).
+      // These are temporary on OpenAI's side and almost always succeed on retry.
+      // Previously only 429 was retried, so a 502 threw immediately - which is
+      // exactly the "502 Bad gateway" error this handler now recovers from.
+      const isTransientStatus =
+        response.status === 429 || response.status >= 500
+      if (isTransientStatus && retryCount < MAX_RETRIES) {
         const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
         const jitter = Math.random() * 1000
         const delay = baseDelay + jitter
-        console.log(`[v0] Rate limited, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+        const label = response.status === 429 ? "Rate limited" : `Server error ${response.status}`
+        console.log(`[v0] ${label}, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
         await new Promise(resolve => setTimeout(resolve, delay))
         return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
       }
