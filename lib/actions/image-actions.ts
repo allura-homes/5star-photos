@@ -2,6 +2,11 @@
 
 import { createClient } from "@/lib/supabase/server"
 import type { UserImage, PhotoClassification, EnhancementPreferences } from "@/lib/types"
+import {
+  deductTokensForTransform,
+  deductTokensForSaveVariation,
+  deductTokensForDownload,
+} from "@/lib/actions/token-actions"
 
 // Safe revalidation helper - revalidatePath doesn't work in v0 preview
 function safeRevalidate(_path: string) {
@@ -133,27 +138,20 @@ export async function transformImage(
     return { success: false, error: "Image not found" }
   }
 
-  // Check token balance (1 token for transform if not first time)
-  const { data: profile } = await supabase.from("profiles").select("tokens").eq("id", user.id).single()
-
-  // Check if this image has been transformed before
+  // Check if this image has been transformed before (first transform is free)
   const { count } = await supabase
     .from("token_transactions")
     .select("*", { count: "exact", head: true })
     .eq("image_id", imageId)
-    .eq("type", "revision")
+    .in("type", ["revision", "transform"])
 
   const isFirstTransform = (count || 0) === 0
 
-  // TEMPORARILY DISABLED: All transforms are free for development/testing
-  // Token deduction bypassed - just log the transaction
-  await supabase.from("token_transactions").insert({
-    user_id: user.id,
-    type: "revision",
-    amount: 0, // No deduction
-    image_id: imageId,
-    description: `${isFirstTransform ? "Initial" : "Re-"}transform of ${image.original_filename} (FREE - tokens disabled)`,
-  })
+  // Token handling is centralised in token-actions and gated by TOKENS_ENFORCED.
+  const result = await deductTokensForTransform(imageId, image.original_filename, isFirstTransform)
+  if (!result.success) {
+    return { success: false, error: result.error }
+  }
 
   // The actual transformation happens via the API route which is called client-side
   // This function just handles the token logic
@@ -473,13 +471,8 @@ export async function saveVariation(
     return { image: null, error: error.message }
   }
 
-  await supabase.from("token_transactions").insert({
-    user_id: user.id,
-    type: "purchase",
-    amount: 0, // Free in development mode
-    image_id: image.id,
-    description: `Saved variation of ${parentImage.original_filename} (FREE - tokens disabled)`,
-  })
+  // Token handling is centralised in token-actions and gated by TOKENS_ENFORCED.
+  await deductTokensForSaveVariation(image.id, parentImage.original_filename, sourceModel ?? "unknown")
 
   safeRevalidate("/library")
   return { image: image as UserImage }
@@ -581,15 +574,11 @@ export async function recordDownload(
     return { success: false, error: "Image not found" }
   }
 
-  // TEMPORARILY DISABLED: Token balance check for development/testing
-  // Download is free for now - just log the transaction
-  await supabase.from("token_transactions").insert({
-    user_id: user.id,
-    type: "upscale",
-    amount: 0, // No deduction
-    image_id: imageId,
-    description: `Downloaded hi-res ${image.original_filename} (FREE - tokens disabled)`,
-  })
+  // Token handling is centralised in token-actions and gated by TOKENS_ENFORCED.
+  const result = await deductTokensForDownload(imageId, image.original_filename)
+  if (!result.success) {
+    return { success: false, error: result.error }
+  }
 
   // Generate signed URL for download
   const { data: signedUrl } = await supabase.storage.from("original-uploads").createSignedUrl(image.storage_path, 3600) // 1 hour expiry

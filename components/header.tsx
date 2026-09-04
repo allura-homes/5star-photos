@@ -10,19 +10,24 @@ export function Header() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-[#0B0D1A]/80 backdrop-blur-xl border-b border-white/10">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-          <Image src="/logo.png" alt="5star.photos" width={48} height={48} className="w-12 h-12" />
-          <span className="text-2xl font-bold text-white">5star.photos</span>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-3">
+        <Link
+          href={isAuthenticated ? "/library" : "/"}
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity min-w-0"
+        >
+          <Image src="/logo.png" alt="5star.photos" width={48} height={48} className="w-10 h-10 sm:w-12 sm:h-12" />
+          <span className="text-xl sm:text-2xl font-bold text-white truncate">5star.photos</span>
         </Link>
 
-        <nav className="flex items-center gap-6">
-          <Link
-            href={isAuthenticated ? "/library" : "/enhance"}
-            className="px-6 py-2.5 rounded-full gradient-magenta-violet glow-magenta hover:scale-105 transition-all duration-300 text-sm font-bold text-white"
-          >
-            {isAuthenticated ? "My Library" : "Enhance Photos"}
-          </Link>
+        <nav className="flex items-center gap-3 sm:gap-6" aria-label="Account">
+          {!isAuthenticated && (
+            <Link
+              href="/enhance"
+              className="hidden sm:inline-flex px-6 py-2.5 rounded-full gradient-magenta-violet glow-magenta hover:scale-105 transition-all duration-300 text-sm font-bold text-white"
+            >
+              Enhance Photos
+            </Link>
+          )}
           <UserMenu />
         </nav>
       </div>

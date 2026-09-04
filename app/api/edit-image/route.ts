@@ -1,5 +1,6 @@
-import type { Request } from "next/server"
+import type { NextRequest } from "next/server"
 import { Buffer } from "buffer"
+import { requireUser } from "@/lib/api-auth"
 
 interface CloudinaryEdits {
   brightness: number
@@ -971,7 +972,12 @@ The final image should look like it was shot with professional studio lighting -
  * See MODEL_CONFIGURATION.md for model details.
  */
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // SECURITY: this route spends paid OpenAI / Gemini / fal credits.
+  // Reject unauthenticated callers before reading the body.
+  const auth = await requireUser(req)
+  if (!auth.ok) return auth.response
+
   try {
     const {
       original_url,
@@ -1228,15 +1234,32 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("[v0] Edit-image API error:", error)
 
+    // Classify the failure so the UI can show plain language. Provider error
+    // bodies are logged above but never returned to the browser.
     const errorMessage = error instanceof Error ? error.message : String(error)
-    const status = errorMessage.includes("quota") || errorMessage.includes("429") ? 429 : 500
+    const lower = errorMessage.toLowerCase()
+    let code = "GENERATION_FAILED"
+    let status = 500
+    let friendly = "This model couldn't finish. The other variations aren't affected."
 
-    return Response.json(
-      {
-        error: "Failed to generate edited image",
-        details: errorMessage,
-      },
-      { status },
-    )
+    if (lower.includes("quota") || lower.includes("429") || lower.includes("rate limit")) {
+      code = "RATE_LIMITED"
+      status = 429
+      friendly = "This model is busy right now. Try again in a minute."
+    } else if (lower.includes("timeout") || lower.includes("abort")) {
+      code = "TIMEOUT"
+      status = 504
+      friendly = "This model took too long to respond. Try again."
+    } else if (lower.includes("safety") || lower.includes("content policy") || lower.includes("blocked")) {
+      code = "CONTENT_BLOCKED"
+      status = 422
+      friendly = "This model declined to edit the photo. Try a different variation."
+    } else if (lower.includes("not found") || lower.includes("404") || lower.includes("does not exist")) {
+      code = "MODEL_UNAVAILABLE"
+      status = 503
+      friendly = "This model is temporarily unavailable."
+    }
+
+    return Response.json({ error: friendly, code }, { status })
   }
 }

@@ -1,6 +1,7 @@
 import { z } from "zod"
-import { NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
 import { Buffer } from "buffer"
+import { requireUser } from "@/lib/api-auth"
 
 // Rate limit cooldown - skip Gemini API calls for 5 minutes after being rate limited
 let geminiRateLimitedUntil = 0
@@ -569,7 +570,11 @@ Remember: If you don't see it, don't mention it. But for what you DO see — mak
  * See docs/ART_DIRECTOR_STRATEGY.md for full guidelines.
  */
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // SECURITY: this route spends paid Gemini credits.
+  const auth = await requireUser(req)
+  if (!auth.ok) return auth.response
+
   try {
     const { filename, room_type_guess, style_mode, original_url, user_preferences } = await req.json()
 

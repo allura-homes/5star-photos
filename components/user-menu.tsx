@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { useAuthContext } from "@/lib/contexts/auth-context"
-import { User, LogOut, Settings, History, Shield, Coins, ChevronDown, Images } from "lucide-react"
+import { User, LogOut, History, Shield, Coins, ChevronDown, Images, HelpCircle, BarChart3 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
 export function UserMenu() {
@@ -137,26 +137,36 @@ export function UserMenu() {
                 className="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
               >
                 <History className="w-4 h-4" />
-                History
+                Activity
               </Link>
               <Link
-                href="/account/settings"
+                href="/help"
                 onClick={() => setIsOpen(false)}
                 className="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
               >
-                <Settings className="w-4 h-4" />
-                Settings
+                <HelpCircle className="w-4 h-4" />
+                Help
               </Link>
 
               {isAdmin && (
-                <Link
-                  href="/admin"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
-                >
-                  <Shield className="w-4 h-4" />
-                  Admin Dashboard
-                </Link>
+                <>
+                  <Link
+                    href="/admin"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
+                  >
+                    <Shield className="w-4 h-4" />
+                    Admin Dashboard
+                  </Link>
+                  <Link
+                    href="/admin/training"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors md:hidden"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    Model Training
+                  </Link>
+                </>
               )}
             </div>
 

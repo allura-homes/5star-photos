@@ -1,7 +1,6 @@
 "use server"
 
 import { createServerClient } from "@supabase/ssr"
-import { createClient as createStorageClient } from "@supabase/supabase-js"
 import type { StyleMode, EnhancementPreferences, PhotoClassification } from "@/lib/types"
 
 // Safe revalidation helper - revalidatePath doesn't work in v0 preview
@@ -11,21 +10,6 @@ function safeRevalidate(_path: string) {
 import { applyWatermark } from "@/lib/utils/watermark"
 import { createClient } from "@/lib/supabase/server"
 import { Buffer } from "buffer"
-
-let storageClientInstance: ReturnType<typeof createStorageClient> | null = null
-
-function getStorageClient() {
-  if (!storageClientInstance) {
-    storageClientInstance = createStorageClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    })
-  }
-  return storageClientInstance
-}
 
 /**
  * 5star.photos Job Processing Engine
@@ -56,12 +40,6 @@ function getApiBaseUrl(): string {
 
   // Client-side: use the browser's current origin
   return typeof window !== "undefined" ? window.location.origin : "https://5star.photos"
-}
-
-function sanitizeFileName(name: string): string {
-  return name
-    .replace(/\s+/g, "_") // Replace spaces with underscores
-    .replace(/[^a-zA-Z0-9._-]/g, "") // Remove any other special characters
 }
 
 function getInternalApiUrl(): string {
@@ -164,140 +142,9 @@ async function fetchWithRetry(
   throw lastError || new Error("Fetch failed after retries")
 }
 
-type UploadedFile = {
-  name: string
-  size: number
-  original_url: string
-}
-
-export async function createJob(
-  input: FormData | { files: UploadedFile[]; styleMode: StyleMode; googleDriveLink?: string },
-) {
-  const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    cookies: { getAll: () => [], setAll: () => {} },
-  })
-
-  let files: File[] = []
-  let uploadedFiles: UploadedFile[] = []
-  let styleMode: StyleMode = "full_5star_fix"
-  let googleDriveLink: string | null = null
-
-  // Handle both FormData (legacy) and object input (new)
-  if (input instanceof FormData) {
-    files = input.getAll("files") as File[]
-    styleMode = (input.get("styleMode") as StyleMode) || "full_5star_fix"
-    googleDriveLink = input.get("googleDriveLink") as string | null
-    console.log("[v0] Creating job with FormData, files:", files.length, "style:", styleMode)
-  } else {
-    uploadedFiles = input.files
-    styleMode = input.styleMode
-    googleDriveLink = input.googleDriveLink || null
-    console.log("[v0] Creating job with pre-uploaded files:", uploadedFiles.length, "style:", styleMode)
-  }
-
-  // Create the job first
-  const { data: job, error: jobError } = await supabase
-    .from("jobs")
-    .insert({
-      status: "uploaded",
-      style_mode: styleMode,
-      file_list: [],
-      google_drive_link: googleDriveLink,
-    })
-    .select()
-    .single()
-
-  if (jobError) {
-    console.error("[v0] Job creation error:", jobError)
-    throw jobError
-  }
-
-  console.log("[v0] Job created with ID:", job.id)
-
-  let fileList: Array<{
-    name: string
-    size: number
-    original_url: string
-    variations: never[]
-    approved: boolean
-  }> = []
-
-  // If we received pre-uploaded files, use them directly
-  if (uploadedFiles.length > 0) {
-    fileList = uploadedFiles.map((f) => ({
-      name: f.name,
-      size: f.size,
-      original_url: f.original_url,
-      variations: [],
-      approved: false,
-    }))
-    console.log("[v0] Using pre-uploaded files:", fileList.length)
-  } else if (files.length > 0) {
-    // Legacy: Upload files server-side (for small files)
-    const storageClient = getStorageClient()
-    for (const file of files) {
-      try {
-        const sanitizedName = sanitizeFileName(file.name)
-        const fileName = `${job.id}/${Date.now()}-${sanitizedName}` // Sanitize file name
-
-        const { data, error } = await storageClient.storage.from("original-uploads").upload(fileName, file, {
-          contentType: file.type || "image/jpeg",
-          upsert: false,
-        })
-
-        if (error) {
-          const errorMessage =
-            typeof error === "object" && error !== null
-              ? (error as any).message || JSON.stringify(error)
-              : String(error)
-          console.error(`[v0] Upload error for ${file.name}:`, errorMessage)
-          continue
-        }
-
-        const { data: urlData } = storageClient.storage.from("original-uploads").getPublicUrl(fileName)
-
-        fileList.push({
-          name: file.name,
-          size: file.size,
-          original_url: urlData.publicUrl,
-          variations: [],
-          approved: false,
-        })
-      } catch (uploadError) {
-        const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError)
-        console.error(`[v0] Upload exception for ${file.name}:`, errorMessage)
-        continue
-      }
-    }
-  }
-
-  console.log("[v0] Files in job:", fileList.length)
-
-  if (fileList.length === 0 && (files.length > 0 || uploadedFiles.length > 0)) {
-    await supabase.from("jobs").delete().eq("id", job.id)
-    return { error: "Failed to upload files. Please try smaller files or fewer files at once." }
-  }
-
-  const { error: updateError } = await supabase
-    .from("jobs")
-    .update({
-      file_list: fileList,
-      status: "processing_preview",
-    })
-    .eq("id", job.id)
-
-  if (updateError) {
-    console.error("[v0] Job update error:", updateError)
-    return { error: "Failed to update job with files." }
-  }
-
-  // Start processing in background
-  processJobPreviews(job.id).catch((err) => {
-    console.error("[v0] Background processing error:", err)
-  })
-
-  return { jobId: job.id }
-}
+// NOTE: The legacy `createJob` action (service-role insert with no user_id and
+// no ownership) was removed in the stable-release security pass. Jobs are
+// created via `createJobRecord`, which runs as the authenticated user.
 
 async function getCurrentUser() {
   const supabase = await createClient()
@@ -509,14 +356,40 @@ export async function processJobPreviews(jobId: string) {
   }
 }
 
+/**
+ * SECURITY: these mutators use the service-role key (bypassing RLS) because
+ * they run in the background pipeline. Every entry point must therefore
+ * verify that the caller owns the job (or is an admin) before writing.
+ */
+async function assertJobOwner(
+  supabase: ReturnType<typeof createServerClient>,
+  jobId: string,
+  select: string,
+): Promise<{ job: any } | { error: string }> {
+  const user = await getCurrentUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { data: job } = await supabase.from("jobs").select(select).eq("id", jobId).single()
+  if (!job) return { error: "Job not found" }
+
+  if ((job as any).user_id !== user.id) {
+    const profile = await getUserProfile(user.id)
+    if (!profile || profile.role !== "admin") {
+      console.warn("[v0] Job access denied:", { jobId, userId: user.id })
+      return { error: "Job not found" }
+    }
+  }
+  return { job }
+}
+
 export async function updateFileApproval(jobId: string, fileName: string, approved: boolean) {
   try {
     const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
       cookies: { getAll: () => [], setAll: () => {} },
     })
-    const { data: job } = await supabase.from("jobs").select("file_list").eq("id", jobId).single()
-
-    if (!job) return { error: "Job not found" }
+    const owned = await assertJobOwner(supabase, jobId, "user_id, file_list")
+    if ("error" in owned) return { error: owned.error }
+    const job = owned.job
 
     const updatedFiles = job.file_list.map((file: any) => (file.name === fileName ? { ...file, approved } : file))
 
@@ -535,14 +408,14 @@ export async function generateFinalImages(jobId: string) {
     const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
       cookies: { getAll: () => [], setAll: () => {} },
     })
-    const { data: job } = await supabase.from("jobs").select().eq("id", jobId).single()
-
-    if (!job) return { error: "Job not found" }
+    const owned = await assertJobOwner(supabase, jobId, "*")
+    if ("error" in owned) return { error: owned.error }
+    const job = owned.job
 
     await supabase.from("jobs").update({ status: "processing_final" }).eq("id", jobId)
 
     const approvedFiles = job.file_list.filter((file: any) => file.approved)
-    const finalFiles = []
+    const finalFiles: any[] = []
 
     for (const file of approvedFiles) {
       await new Promise((resolve) => setTimeout(resolve, 1500))

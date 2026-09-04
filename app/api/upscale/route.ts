@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
+import { requireUser } from "@/lib/api-auth"
 
 // Upscale images using fal.ai ESRGAN
 // Returns a higher-resolution version of the input image
@@ -7,8 +8,12 @@ import { NextResponse } from "next/server"
 // To re-enable: Remove the early return below and ensure FAL_KEY is configured
 // The fal.ai ESRGAN code is preserved below for future use
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // SECURITY: gate before any paid provider call (even while disabled).
+    const auth = await requireUser(request)
+    if (!auth.ok) return auth.response
+
     const { imageUrl } = await request.json()
 
     if (!imageUrl) {

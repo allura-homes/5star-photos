@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { put } from "@vercel/blob"
 import { v4 as uuidv4 } from "uuid"
+import { requireUser } from "@/lib/api-auth"
 
 export async function POST(request: NextRequest) {
   try {
+    // SECURITY: only signed-in users may upload to Blob storage.
+    const auth = await requireUser(request)
+    if (!auth.ok) return auth.response
+
     const formData = await request.formData()
     const file = formData.get("file") as File | null
 
@@ -29,9 +34,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate unique filename
-    const extension = file.name.split(".").pop() || "jpg"
-    const filename = `reference-images/${uuidv4()}.${extension}`
+    // Generate unique filename. Extension is derived from the validated MIME
+    // type (never from the user-supplied filename) and the path is scoped to
+    // the caller so uploads are attributable.
+    const extByType: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+      "image/gif": "gif",
+    }
+    const extension = extByType[file.type] ?? "jpg"
+    const filename = `reference-images/${auth.user.id}/${uuidv4()}.${extension}`
 
     // Upload to Vercel Blob
     const blob = await put(filename, file, {
