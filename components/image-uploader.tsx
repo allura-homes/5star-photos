@@ -8,7 +8,7 @@ import { getUserProjects, createProject } from "@/lib/actions/project-actions"
 import type { PhotoClassification, Project } from "@/lib/types"
 import { Upload, X, Loader2, Home, Mountain, HelpCircle, Check, AlertCircle, AlertTriangle, FolderOpen, Plus, ChevronDown } from "lucide-react"
 import { v4 as uuidv4 } from "uuid"
-import { TOKEN_COSTS } from "@/lib/constants/tokens"
+import { TOKEN_COSTS, TOKENS_ENFORCED } from "@/lib/constants/tokens"
 
 interface ImageUploaderProps {
   onComplete: () => void
@@ -285,9 +285,9 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
   const pendingCount = uploads.filter((u) => u.status === "pending").length
   const doneCount = uploads.filter((u) => u.status === "done").length
   const errorCount = uploads.filter((u) => u.status === "error").length
-  // TEMPORARILY DISABLED: Token limits bypassed for development
-  const requiredTokens = 0 // was: pendingCount * TOKEN_COSTS.upload
-  const hasInsufficientTokens = false // was: requiredTokens > tokenBalance
+  // Token limits are gated by TOKENS_ENFORCED (free beta = never blocked)
+  const requiredTokens = TOKENS_ENFORCED ? pendingCount * TOKEN_COSTS.upload : 0
+  const hasInsufficientTokens = TOKENS_ENFORCED && requiredTokens > tokenBalance
 
   return (
     <>
@@ -471,7 +471,7 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
           <Upload className="w-12 h-12 text-slate-400 mx-auto mb-4" />
           <p className="text-white font-medium mb-2">{isDragActive ? "Drop photos here" : "Drag & drop photos here"}</p>
           <p className="text-slate-400 text-sm">or click to browse (JPG, PNG, WebP, HEIC up to 50MB each)</p>
-          <p className="text-green-400 text-sm mt-2">Unlimited uploads - development mode</p>
+          {!TOKENS_ENFORCED && <p className="text-emerald-400 text-sm mt-2">Free during beta</p>}
         </div>
 
         {/* Upload queue */}
@@ -484,8 +484,8 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
                 {errorCount > 0 && ` (${errorCount} failed)`}
               </p>
               {!isUploading && pendingCount > 0 && (
-                <p className="text-sm font-medium text-green-400">
-                  Free (development mode)
+                <p className="text-sm font-medium text-emerald-400">
+                  {TOKENS_ENFORCED ? `${requiredTokens} token${requiredTokens !== 1 ? "s" : ""}` : "Free during beta"}
                 </p>
               )}
             </div>
@@ -590,7 +590,7 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
                 ) : (
                   <>
                     <Upload className="w-4 h-4" />
-                    Upload {pendingCount} Photo{pendingCount !== 1 ? "s" : ""} (Free)
+                    Upload {pendingCount} Photo{pendingCount !== 1 ? "s" : ""}{TOKENS_ENFORCED ? ` (${requiredTokens} tokens)` : ""}
                   </>
                 )}
               </button>

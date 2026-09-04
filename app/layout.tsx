@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Montserrat } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { AuthProvider } from "@/lib/contexts/auth-context"
+import { Toaster } from "sonner"
 import "./globals.css"
 
 const montserrat = Montserrat({
@@ -42,6 +43,17 @@ export default function RootLayout({
     <html lang="en" className="bg-background">
       <body className={`${montserrat.variable} font-sans antialiased`}>
         <AuthProvider>{children}</AuthProvider>
+        <Toaster
+          position="bottom-right"
+          theme="dark"
+          closeButton
+          toastOptions={{
+            classNames: {
+              toast: "!bg-[#141830] !border-white/10 !text-white",
+              description: "!text-slate-400",
+            },
+          }}
+        />
         <Analytics />
       </body>
     </html>

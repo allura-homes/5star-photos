@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
+import { toast } from "sonner"
 import { AppShell } from "@/components/app-shell"
 import { Download, CheckSquare, Square } from 'lucide-react'
 import type { Job } from '@/lib/types'
@@ -70,7 +71,7 @@ export default function DownloadPage({ params }: { params: Promise<{ jobId: stri
       : job.file_list.filter((_, i) => selectedFiles.has(i))
     
     console.log('[v0] Downloading files:', files.map(f => f.name))
-    alert(`Downloading ${files.length} file(s)...`)
+    toast.info(`Downloading ${files.length} file(s)...`)
   }
 
   if (!job) {

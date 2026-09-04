@@ -253,7 +253,6 @@ export default function BatchTransformPage() {
                 imageData: imageData,
                 sourceModel: modelConfig.model,
                 transformationPrompt: imagePrompt,
-                userId: userId,
               }),
             }, SAVE_VARIATION_TIMEOUT)
             

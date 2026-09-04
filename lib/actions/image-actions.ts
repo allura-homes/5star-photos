@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import type { UserImage, PhotoClassification, EnhancementPreferences } from "@/lib/types"
 import {
+  deductTokensForUpload,
   deductTokensForTransform,
   deductTokensForSaveVariation,
   deductTokensForDownload,
@@ -20,19 +21,19 @@ export async function getUserImages(userId?: string): Promise<{ images: UserImag
   try {
     const supabase = await createClient()
 
-    let effectiveUserId = userId
-    
-    // If no userId provided, try to get from session
+    // SECURITY: the verified session user always wins. The optional `userId`
+    // argument is only a fallback for the rare case where the server can't
+    // read auth cookies (it's still constrained by RLS on the images table).
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    const effectiveUserId = user?.id ?? userId
     if (!effectiveUserId) {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      
-      if (!session?.user) {
-        return { images: [], error: "Not authenticated" }
-      }
-      
-      effectiveUserId = session.user.id
+      return { images: [], error: "Not authenticated" }
+    }
+    if (userId && user && userId !== user.id) {
+      console.warn("[v0] getUserImages: client userId did not match session; using session user")
     }
 
     // Fetch all user images
@@ -274,13 +275,6 @@ export async function uploadImage(
   }
   const user = session.user
 
-  // TEMPORARILY DISABLED: Token balance check for development/testing
-  const { data: profile } = await supabase.from("profiles").select("tokens").eq("id", user.id).single()
-  // Token check bypassed - uncomment to re-enable:
-  // if (!profile || profile.tokens < 1) {
-  //   return { image: null, error: "Insufficient tokens" }
-  // }
-
   // Convert base64 - strip data URL prefix if present
   const base64Data = fileBase64.includes(",") ? fileBase64.split(",")[1] : fileBase64
   
@@ -295,22 +289,6 @@ export async function uploadImage(
     console.log("[v0] uploadImage: Uploading to path:", storagePath)
     const publicUrl = await uploadToStorage(base64Data, storagePath, fileType || "image/jpeg")
     console.log("[v0] uploadImage: Upload successful, URL:", publicUrl?.substring(0, 80) + "...")
-
-    // Deduct token after successful upload.
-    // Token enforcement is currently disabled, and the user may not have a
-    // profiles row yet (profile === null), so only deduct when a balance
-    // actually exists. This prevents the "Cannot read properties of null
-    // (reading 'tokens')" crash.
-    if (profile && typeof profile.tokens === "number") {
-      const { error: tokenError } = await supabase
-        .from("profiles")
-        .update({ tokens: profile.tokens - 1 })
-        .eq("id", user.id)
-
-      if (tokenError) {
-        return { image: null, error: "Failed to deduct token" }
-      }
-    }
 
     // Create image record
     const { data: image, error } = await supabase
@@ -331,21 +309,17 @@ export async function uploadImage(
       .single()
 
     if (error) {
-      // Refund token on failure (only if a balance was deducted above)
-      if (profile && typeof profile.tokens === "number") {
-        await supabase.from("profiles").update({ tokens: profile.tokens }).eq("id", user.id)
-      }
       return { image: null, error: error.message }
     }
 
-    // Use 'purchase' type instead of 'upload'
-    await supabase.from("token_transactions").insert({
-      user_id: user.id,
-      type: "purchase",
-      amount: -1,
-      image_id: image.id,
-      description: `Uploaded ${fileName}`,
-    })
+    // Token handling is centralised in token-actions and gated by TOKENS_ENFORCED.
+    // The record is created first so a token failure never orphans the upload;
+    // when enforcement is on, a rejected deduction removes the record again.
+    const tokenResult = await deductTokensForUpload(image.id, fileName)
+    if (!tokenResult.success) {
+      await supabase.from("images").delete().eq("id", image.id).eq("user_id", user.id)
+      return { image: null, error: tokenResult.error }
+    }
 
     safeRevalidate("/library")
     return { image: image as UserImage }
@@ -387,10 +361,6 @@ export async function saveVariation(
   if (!parentImage) {
     return { image: null, error: "Parent image not found" }
   }
-
-  // TEMPORARILY DISABLED: Token balance check for development/testing
-  // Save variation is free for now
-  const { data: profile } = await supabase.from("profiles").select("tokens").eq("id", user.id).single()
 
   let finalStoragePath = imageData
 

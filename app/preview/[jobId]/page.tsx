@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { useParams, useRouter } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
 import { PreviewGrid } from "@/components/preview-grid"
@@ -100,7 +101,7 @@ export default function PreviewPage() {
     }, 0)
 
     if (approvedCount === 0) {
-      alert("Please approve at least one photo variation")
+      toast.warning("Approve at least one variation to continue.")
       return
     }
 
@@ -110,7 +111,7 @@ export default function PreviewPage() {
     if (result.success) {
       router.push(`/download/${job.id}`)
     } else {
-      alert("Failed to generate final images")
+      toast.error("We couldn't generate the final images. Please try again.")
       setIsGenerating(false)
     }
   }

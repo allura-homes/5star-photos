@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect } from "react"
+import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { UploadCard } from "@/components/upload-card"
 import { TaskTiles } from "@/components/task-tiles"
@@ -49,7 +50,7 @@ export default function EnhancePage() {
 
         if (jobResult.error || !jobResult.jobId) {
           console.error("Job creation failed:", jobResult.error)
-          alert(`Error: ${jobResult.error}`)
+          toast.error(jobResult.error || "We couldn't start this job. Please try again.")
           setIsProcessing(false)
           setProcessingStage("idle")
           return
@@ -67,7 +68,7 @@ export default function EnhancePage() {
         }
 
         if (uploadedFiles.length === 0 && files.length > 0) {
-          alert("Failed to upload files. Please try again.")
+          toast.error("We couldn't upload your photos. Please try again.")
           setIsProcessing(false)
           setProcessingStage("idle")
           return
@@ -78,7 +79,7 @@ export default function EnhancePage() {
         const finalizeResult = await processEnhancement(jobId, uploadedFiles)
 
         if (finalizeResult.error) {
-          alert(`Error: ${finalizeResult.error}`)
+          toast.error(finalizeResult.error || "Enhancement failed. Please try again.")
           setIsProcessing(false)
           setProcessingStage("idle")
           return
@@ -87,7 +88,7 @@ export default function EnhancePage() {
         router.push(`/preview/${jobId}`)
       } catch (error) {
         console.error("Enhancement error:", error)
-        alert("An error occurred during enhancement. Please try again.")
+        toast.error("Something went wrong during enhancement. Please try again.")
         setIsProcessing(false)
         setProcessingStage("idle")
       }
@@ -107,7 +108,7 @@ export default function EnhancePage() {
 
   const handleEnhance = useCallback(async () => {
     if (files.length === 0) {
-      alert("Please select at least one photo to enhance.")
+      toast.warning("Add at least one photo first.")
       return
     }
 
@@ -199,7 +200,7 @@ export default function EnhancePage() {
               processingStage={processingStage}
             />
 
-            <TaskTiles />
+            <TaskTiles stage={processingStage} />
           </div>
         </main>
       </div>

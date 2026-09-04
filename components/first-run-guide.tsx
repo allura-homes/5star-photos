@@ -5,6 +5,7 @@ import Image from "next/image"
 import { Upload, Wand2, Download, Sparkles, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { uploadImage } from "@/lib/actions/image-actions"
+import { prepareImageForUpload } from "@/lib/compress-image"
 import type { PhotoClassification } from "@/lib/types"
 
 /**
@@ -32,13 +33,11 @@ export function FirstRunGuide({ onSampleAdded, onUploadClick }: { onSampleAdded:
     setBusy(true)
     try {
       const res = await fetch(SAMPLE.src)
+      if (!res.ok) throw new Error(`sample fetch failed: ${res.status}`)
       const blob = await res.blob()
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = () => reject(new Error("read failed"))
-        reader.readAsDataURL(blob)
-      })
+      // The hero asset is a full-size photo; shrink it the same way the
+      // regular uploader does so it fits the server-action body limit.
+      const base64 = await prepareImageForUpload(blob)
       const { error } = await uploadImage(base64, SAMPLE.fileName, "image/jpeg", SAMPLE.classification)
       if (error) {
         toast.error("Couldn't add the sample photo. Try uploading one of your own instead.")

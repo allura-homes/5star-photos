@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { useDropzone } from "react-dropzone"
 import { getUserImages, deleteImage, deleteImages, updateImageClassification, uploadImage } from "@/lib/actions/image-actions"
+import { prepareImageForUpload } from "@/lib/compress-image"
 import { getUserProjects, assignImagesToProject } from "@/lib/actions/project-actions"
 import type { UserImage, PhotoClassification, Project } from "@/lib/types"
 import { TOKEN_COSTS, TOKENS_ENFORCED } from "@/lib/constants/tokens"
@@ -222,53 +223,6 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     setPendingUploads((prev) => prev.map((u) => (u.id === id ? { ...u, classification } : u)))
   }
 
-  // Compress image to reduce file size for large uploads (Vercel has ~4.5MB limit)
-  async function compressImage(file: File, maxSizeMB: number = 2.5): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const img = new window.Image()
-      img.crossOrigin = "anonymous"
-      
-      img.onload = () => {
-        const fileSizeMB = file.size / (1024 * 1024)
-        let scale = 1
-        
-        // More aggressive scaling for larger files
-        if (fileSizeMB > maxSizeMB) {
-          scale = Math.sqrt(maxSizeMB / fileSizeMB) * 0.9 // Extra 10% reduction
-        }
-        
-        // Limit max dimensions to 3000px
-        const maxDim = 3000
-        if (img.width > maxDim || img.height > maxDim) {
-          const dimScale = maxDim / Math.max(img.width, img.height)
-          scale = Math.min(scale, dimScale)
-        }
-        
-        const canvas = document.createElement("canvas")
-        canvas.width = Math.round(img.width * scale)
-        canvas.height = Math.round(img.height * scale)
-        
-        const ctx = canvas.getContext("2d")
-        if (!ctx) {
-          reject(new Error("Failed to get canvas context"))
-          return
-        }
-        
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        
-        // More aggressive quality for very large files
-        const quality = fileSizeMB > 8 ? 0.7 : fileSizeMB > 5 ? 0.75 : 0.8
-        const dataUrl = canvas.toDataURL("image/jpeg", quality)
-        
-        console.log(`[v0] Compressed: ${img.width}x${img.height} -> ${canvas.width}x${canvas.height}, quality: ${quality}, ~${(dataUrl.length * 0.75 / 1024 / 1024).toFixed(2)}MB`)
-        resolve(dataUrl)
-      }
-      
-      img.onerror = () => reject(new Error("Failed to load image for compression"))
-      img.src = URL.createObjectURL(file)
-    })
-  }
-
   async function handleUploadAll() {
     const pendingCount = pendingUploads.filter((u) => u.status === "pending").length
     const cost = pendingCount * TOKEN_COSTS.upload
@@ -285,21 +239,8 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
       setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "uploading" } : u)))
 
       try {
-        // Compress large images before upload (Vercel serverless limit is ~4.5MB)
-        let base64: string
-        const fileSizeMB = upload.file.size / (1024 * 1024)
-        
-        if (fileSizeMB > 2.5) {
-          console.log(`[v0] Large file detected (${fileSizeMB.toFixed(2)}MB), compressing...`)
-          base64 = await compressImage(upload.file, 2.5)
-        } else {
-          base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = reject
-            reader.readAsDataURL(upload.file)
-          })
-        }
+        // Shrinks anything over the upload budget so it fits the server-action body limit
+        const base64 = await prepareImageForUpload(upload.file)
 
         const { error } = await uploadImage(base64, upload.file.name, "image/jpeg", upload.classification)
 
