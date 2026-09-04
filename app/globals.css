@@ -136,3 +136,11 @@
     background-clip: text;
   }
 }
+
+/* Lift bottom toasts above the fixed mobile bottom nav (~78px tall).
+   sonner ignores the `offset` prop on mobile, so override the bottom directly. */
+@media (max-width: 600px) {
+  [data-sonner-toaster][data-y-position="bottom"] {
+    bottom: 92px !important;
+  }
+}

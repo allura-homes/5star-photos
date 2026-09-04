@@ -44,9 +44,10 @@ export default function RootLayout({
       <body className={`${montserrat.variable} font-sans antialiased`}>
         <AuthProvider>{children}</AuthProvider>
         <Toaster
-          position="bottom-right"
+          position="bottom-center"
           theme="dark"
           closeButton
+          offset="88px"
           toastOptions={{
             classNames: {
               toast: "!bg-[#141830] !border-white/10 !text-white",
