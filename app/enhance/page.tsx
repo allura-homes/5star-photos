@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
 import { UploadCard } from "@/components/upload-card"
 import { TaskTiles } from "@/components/task-tiles"
 import { AuthModal } from "@/components/auth-modal"
@@ -148,22 +147,15 @@ export default function EnhancePage() {
     }
   }, [authLoading])
 
+  // Signed-in users are redirected to /library by middleware (lib/supabase/proxy.ts).
+  // This page is the guest landing: try the uploader, then sign up to continue.
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       router.replace("/library")
     }
   }, [isAuthenticated, authLoading, router])
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-fuchsia-400 animate-spin" />
-      </div>
-    )
-  }
-
-  if (isAuthenticated) {
-    router.replace("/library")
+  if (authLoading || isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-fuchsia-400 animate-spin" />
@@ -173,12 +165,10 @@ export default function EnhancePage() {
 
   return (
     <div className="min-h-screen flex">
-      <Sidebar />
-
       <div className="flex-1 flex flex-col min-h-screen">
         <Header />
 
-        <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 flex flex-col items-center justify-center p-4 pt-24 sm:p-6 sm:pt-24 lg:p-8 lg:pt-28">
           <div className="w-full max-w-4xl space-y-8">
             <div className="text-center space-y-4">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-fuchsia-500/10 to-violet-500/10 border border-fuchsia-500/20">

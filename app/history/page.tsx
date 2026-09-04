@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Header } from "@/components/header"
-import { Sidebar } from "@/components/sidebar"
+import { AppShell } from "@/components/app-shell"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { getUserJobs } from "@/lib/actions/job-actions"
 import { getTokenHistory } from "@/lib/actions/token-actions"
@@ -102,13 +101,7 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <div className="flex flex-1 pt-20">
-        <Sidebar />
-
-        <main className="flex-1 ml-20 p-8">
+    <AppShell>
           <div className="max-w-5xl mx-auto">
             <div className="mb-8">
               <h1 className="text-3xl font-bold text-white mb-2">History</h1>
@@ -257,8 +250,6 @@ export default function HistoryPage() {
               </div>
             )}
           </div>
-        </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

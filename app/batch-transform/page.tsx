@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
 import { useAuthContext } from "@/lib/contexts/auth-context"
+import { AppShell } from "@/components/app-shell"
 import { getImageById } from "@/lib/actions/image-actions"
 import type { UserImage, EnhancementPreferences, PhotoClassification } from "@/lib/types"
 import { DEFAULT_ENHANCEMENT_PREFERENCES } from "@/lib/types"
@@ -375,7 +376,7 @@ export default function BatchTransformPage() {
   }
 
   return (
-    <div className="min-h-screen p-6 md:p-8">
+    <AppShell>
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
@@ -659,6 +660,6 @@ export default function BatchTransformPage() {
         imageName={`${batchImages.length} images`}
         initialPreferences={customPreferences || undefined}
       />
-    </div>
+    </AppShell>
   )
 }

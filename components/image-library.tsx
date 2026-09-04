@@ -7,7 +7,9 @@ import { useDropzone } from "react-dropzone"
 import { getUserImages, deleteImage, deleteImages, updateImageClassification, uploadImage } from "@/lib/actions/image-actions"
 import { getUserProjects, assignImagesToProject } from "@/lib/actions/project-actions"
 import type { UserImage, PhotoClassification, Project } from "@/lib/types"
-import { TOKEN_COSTS } from "@/lib/constants/tokens"
+import { TOKEN_COSTS, TOKENS_ENFORCED } from "@/lib/constants/tokens"
+import { FirstRunGuide } from "@/components/first-run-guide"
+import { toast } from "sonner"
 import { v4 as uuidv4 } from "uuid"
 import { loadPendingFiles, clearPendingFiles } from "@/lib/pending-files-storage"
 import { useAuthContext } from "@/lib/contexts/auth-context"
@@ -202,7 +204,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     setPendingUploads((prev) => [...prev, ...newUploads])
   }, [])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: { "image/*": [".jpg", ".jpeg", ".png", ".webp", ".heic"] },
     maxSize: 50 * 1024 * 1024,
@@ -269,11 +271,11 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
 
   async function handleUploadAll() {
     const pendingCount = pendingUploads.filter((u) => u.status === "pending").length
-    // const cost = pendingCount * TOKEN_COSTS.upload
-    // TEMPORARILY DISABLED: Token check bypassed for development
-    // if (cost > tokenBalance) {
-    //   return // Button should be disabled, but just in case
-    // }
+    const cost = pendingCount * TOKEN_COSTS.upload
+    if (TOKENS_ENFORCED && cost > tokenBalance) {
+      toast.error(`You need ${cost} tokens for this upload but have ${tokenBalance}.`)
+      return
+    }
 
     setIsUploading(true)
 
@@ -316,7 +318,13 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
 
     setIsUploading(false)
     setTimeout(() => {
-      setPendingUploads([])
+      setPendingUploads((current) => {
+        const failed = current.filter((u) => u.status === "error").length
+        const done = current.filter((u) => u.status === "done").length
+        if (done > 0) toast.success(`${done} photo${done === 1 ? "" : "s"} uploaded. Open one and press Transform.`)
+        if (failed > 0) toast.error(`${failed} photo${failed === 1 ? "" : "s"} couldn't be uploaded. Try again.`)
+        return []
+      })
       loadImages()
     }, 1000)
   }
@@ -512,11 +520,15 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
   if (images.length === 0) {
     const pendingCount = pendingUploads.filter((u) => u.status === "pending").length
     const uploadCost = pendingCount * TOKEN_COSTS.upload
-    // TEMPORARILY DISABLED: Token limits bypassed for development
-    const hasInsufficientTokens = false // was: uploadCost > tokenBalance
+    const hasInsufficientTokens = TOKENS_ENFORCED && uploadCost > tokenBalance
 
     return (
-      <div className="bg-white/5 rounded-2xl border border-white/10 p-6">
+      <div className="flex flex-col gap-8">
+        {pendingUploads.length === 0 && (
+          <FirstRunGuide onSampleAdded={loadImages} onUploadClick={() => open()} />
+        )}
+
+        <div className="bg-white/5 rounded-2xl border border-white/10 p-6">
         <div
           {...getRootProps()}
           className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
@@ -529,7 +541,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
           <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragActive ? "text-[#FF3EDB]" : "text-slate-500"}`} />
           <p className="text-white font-medium mb-2">{isDragActive ? "Drop photos here" : "Drag & drop photos here"}</p>
           <p className="text-slate-400 text-sm mb-2">or click to browse (JPG, PNG, WebP, HEIC up to 50MB each)</p>
-          <p className="text-green-400 text-sm">Unlimited uploads - development mode</p>
+          {!TOKENS_ENFORCED && <p className="text-emerald-400 text-sm">Free during beta</p>}
         </div>
 
         {pendingUploads.length > 0 && (
@@ -634,19 +646,16 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
                     Uploading...
                   </span>
                 ) : (
-                  `Upload ${pendingCount} Photo${pendingCount !== 1 ? "s" : ""} (${uploadCost} token${uploadCost !== 1 ? "s" : ""})`
+                  TOKENS_ENFORCED
+                    ? `Upload ${pendingCount} Photo${pendingCount !== 1 ? "s" : ""} (${uploadCost} token${uploadCost !== 1 ? "s" : ""})`
+                    : `Upload ${pendingCount} Photo${pendingCount !== 1 ? "s" : ""}`
                 )}
               </button>
             )}
           </div>
         )}
 
-        {pendingUploads.length === 0 && (
-          <div className="text-center mt-6">
-            <ImageIcon className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-400">Your library is empty. Drop photos above to get started.</p>
-          </div>
-        )}
+        </div>
       </div>
     )
   }

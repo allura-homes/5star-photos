@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Header } from "@/components/header"
-import { Sidebar } from "@/components/sidebar"
+import { AppShell } from "@/components/app-shell"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { getAllJobs } from "@/lib/actions/job-actions"
 import { createClient } from "@/lib/supabase/client"
@@ -104,13 +103,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <div className="flex flex-1 pt-20">
-        <Sidebar />
-
-        <main className="flex-1 ml-20 p-8">
+    <AppShell>
           <div className="max-w-7xl mx-auto">
             {/* Header */}
             <div className="flex items-center gap-4 mb-8">
@@ -372,8 +365,6 @@ export default function AdminPage() {
               </div>
             )}
           </div>
-        </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

@@ -57,32 +57,60 @@ export async function updateSession(request: NextRequest) {
     console.log("[v0] middleware getUser failed, treating as unauthenticated:", error)
   }
 
-  // Protected routes that require authentication
-  // Note: Most routes handle auth client-side via useAuthContext
-  // Only add routes here that MUST be server-protected
-  const protectedPaths = ["/dashboard", "/account", "/history"]
-  const isProtectedPath = protectedPaths.some((path) => request.nextUrl.pathname.startsWith(path))
+  const pathname = request.nextUrl.pathname
 
-  // Admin-only routes
-  const adminPaths = ["/admin"]
-  const isAdminPath = adminPaths.some((path) => request.nextUrl.pathname.startsWith(path))
+  // ---------------------------------------------------------------------
+  // Single-pipeline navigation (stable release)
+  // The legacy Quick Enhance -> Batch Jobs -> Preview -> Download pipeline is
+  // retired for signed-in users. Everything lives in Library -> Transform.
+  // Admins keep read-only access to the legacy pages for support.
+  // ---------------------------------------------------------------------
+  const legacyUserPaths = ["/batch-jobs", "/preview", "/download", "/jobs"]
+  const isLegacyPath = legacyUserPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 
-  // Redirect unauthenticated users from protected routes
-  if (isProtectedPath && !user) {
+  // Signed-in users who land on the guest upload page go straight to Library.
+  if (pathname === "/enhance" && user) {
     const url = request.nextUrl.clone()
-    url.pathname = "/auth/login"
-    url.searchParams.set("redirect", request.nextUrl.pathname)
+    url.pathname = "/library"
+    url.search = ""
     return NextResponse.redirect(url)
   }
 
-  // Check admin access
-  if (isAdminPath && user) {
+  // Dead legacy link "/about" now lives at "/help".
+  if (pathname === "/about") {
+    const url = request.nextUrl.clone()
+    url.pathname = "/help"
+    return NextResponse.redirect(url, 308)
+  }
+
+  // Protected routes that require authentication
+  // Note: Most routes handle auth client-side via useAuthContext
+  // Only add routes here that MUST be server-protected
+  const protectedPaths = ["/dashboard", "/account", "/history", "/library", "/transform", "/batch-transform"]
+  const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path))
+
+  // Admin-only routes
+  const adminPaths = ["/admin"]
+  const isAdminPath = adminPaths.some((path) => pathname.startsWith(path))
+
+  // Redirect unauthenticated users from protected routes
+  if ((isProtectedPath || isLegacyPath) && !user) {
+    const url = request.nextUrl.clone()
+    url.pathname = "/auth/login"
+    url.search = ""
+    url.searchParams.set("redirect", pathname)
+    return NextResponse.redirect(url)
+  }
+
+  // Admin role is needed for /admin/* and for the retired legacy pages.
+  if ((isAdminPath || isLegacyPath) && user) {
     // Fetch user's role from profiles
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
 
     if (profile?.role !== "admin") {
       const url = request.nextUrl.clone()
-      url.pathname = "/"
+      url.pathname = "/library"
+      url.search = ""
       return NextResponse.redirect(url)
     }
   } else if (isAdminPath && !user) {

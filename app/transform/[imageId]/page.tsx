@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Image from "next/image"
-import { Header } from "@/components/header"
-import { Sidebar } from "@/components/sidebar"
+import { AppShell } from "@/components/app-shell"
+import { toast } from "sonner"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { getImageById, transformImage } from "@/lib/actions/image-actions"
 import type { UserImage, ModelProvider, EnhancementPreferences } from "@/lib/types"
@@ -60,6 +60,20 @@ const MODEL_CONFIG: { model: ModelProvider; label: string }[] = [
   // May still fail fast with "Failed to fetch" if not reachable.
   { model: "openai_2", label: "V4" },
 ]
+
+/** Turn an /api/edit-image failure into a sentence a host can act on. */
+async function friendlyModelError(response: Response): Promise<string> {
+  try {
+    const data = await response.json()
+    if (typeof data?.error === "string" && !data.error.startsWith("{")) return data.error
+  } catch {
+    /* non-JSON body */
+  }
+  if (response.status === 401) return "Your session expired. Sign in again and retry."
+  if (response.status === 429) return "This model is busy right now. Try again in a minute."
+  if (response.status === 504) return "This model took too long. Try again."
+  return "This model couldn't finish. The other variations aren't affected."
+}
 
 export default function TransformPage() {
   const params = useParams()
@@ -209,19 +223,14 @@ export default function TransformPage() {
 
         // Check for non-OK responses before parsing JSON
         if (!response.ok) {
-          const errorText = await response.text()
-          console.error(`[v0] ${label} HTTP error ${response.status}:`, errorText.substring(0, 100))
-          return {
-            index,
-            preview_url: null,
-            error: `HTTP ${response.status}: ${errorText.substring(0, 50)}`,
-          }
+          console.error(`[v0] ${label} HTTP error ${response.status}`)
+          return { index, preview_url: null, error: await friendlyModelError(response) }
         }
 
         const result = await response.json()
-        
+
         if (result.error) {
-          console.error(`[v0] ${label} error:`, result.error, result.details)
+          console.error(`[v0] ${label} error:`, result.error)
         } else {
           console.log(`[v0] ${label} succeeded`)
         }
@@ -229,14 +238,14 @@ export default function TransformPage() {
         return {
           index,
           preview_url: result.url || null,
-          error: result.error ? `${result.error}: ${result.details || ''}` : undefined,
+          error: result.error ? String(result.error) : undefined,
         }
       } catch (err) {
         console.error(`[v0] ${label} fetch error:`, err)
         return {
           index,
           preview_url: null,
-          error: `Failed to generate: ${err instanceof Error ? err.message : String(err)}`,
+          error: "We couldn't reach this model. Check your connection and try again.",
         }
       }
     })
@@ -260,7 +269,16 @@ export default function TransformPage() {
 
     setIsTransforming(false)
     refreshProfile() // Refresh token count
-    
+
+    const okCount = results.filter((r) => r.preview_url && !r.error).length
+    if (okCount === results.length) {
+      toast.success("All variations are ready. Compare them and save your favourite.")
+    } else if (okCount > 0) {
+      toast.warning(`${okCount} of ${results.length} variations finished. Press Transform again to retry the rest.`)
+    } else {
+      toast.error("None of the models could finish this photo. Try again in a minute.")
+    }
+
     // Auto-save successful transformations to the database
     // This ensures users can return to their transformations later
     const successfulResults = results.filter(r => r.preview_url && !r.error)
@@ -279,14 +297,7 @@ export default function TransformPage() {
             imageData: result.preview_url,
             sourceModel: modelConfig.model,
             transformationPrompt: imagePrompt,
-            userId: profile?.id, // May be undefined, API will try to get from parent image
           }
-          console.log(`[v0] Save body for ${modelConfig.label}:`, {
-            parentImageId: saveBody.parentImageId,
-            sourceModel: saveBody.sourceModel,
-            userId: saveBody.userId,
-            imageDataLength: saveBody.imageData?.length || 0,
-          })
           
           const saveResponse = await fetch("/api/save-variation", {
             method: "POST",
@@ -328,15 +339,15 @@ export default function TransformPage() {
           imageData: preview.preview_url,
           sourceModel: preview.model,
           transformationPrompt: null,
-          userId: profile?.id,
         }),
       })
 
       const result = await response.json()
 
       if (!response.ok || result.error) {
-        alert(result.error || "Failed to save variation")
+        toast.error(typeof result.error === "string" ? result.error : "We couldn't save this variation. Please try again.")
       } else {
+        toast.success(`${preview.modelLabel} saved to your library.`)
         setSaveSuccess(preview.modelLabel)
         refreshProfile()
         // Reload image to show new variation
@@ -344,7 +355,7 @@ export default function TransformPage() {
       }
     } catch (err) {
       console.error("[v0] Save variation error:", err)
-      alert("Failed to save variation")
+      toast.error("We couldn't save this variation. Please try again.")
     }
 
     setIsSaving(false)
@@ -419,13 +430,8 @@ export default function TransformPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <div className="flex flex-1 pt-20">
-        <Sidebar />
-
-        <main className="flex-1 ml-20 p-8">
+    <AppShell>
+      <>
           <div className="max-w-6xl mx-auto">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
@@ -819,10 +825,7 @@ export default function TransformPage() {
               )}
             </div>
           </div>
-        </main>
-      </div>
-      
-      {/* Full-screen comparison modal */}
+        {/* Full-screen comparison modal */}
       {isComparing && (selectedPreview?.preview_url || compareVariations.length > 0) && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/80 backdrop-blur-xl animate-in fade-in duration-200"
@@ -999,6 +1002,7 @@ export default function TransformPage() {
           ]}
         />
       )}
-    </div>
+      </>
+    </AppShell>
   )
 }
