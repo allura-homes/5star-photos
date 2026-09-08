@@ -10,6 +10,7 @@ export interface SpendResult {
   code: SpendCode
   planCredits: number
   topupCredits: number
+  bonusCredits: number
   total: number
   plan: PlanId
 }
@@ -18,6 +19,8 @@ export interface CreditBalance {
   plan: PlanId
   planCredits: number
   topupCredits: number
+  /** Non-expiring credits (beta bonus, internal grants). Spendable on every plan. */
+  bonusCredits: number
   total: number
   subscriptionStatus: string | null
   currentPeriodEnd: string | null
@@ -33,12 +36,17 @@ const LEDGER_TYPE: Record<CreditAction, string> = {
   upscale: "upscale",
 }
 
+// Top-up credits are frozen (not lost) while a user is not subscribed; bonus credits always count.
+export function usableTotal(plan: PlanId, planCredits: number, topupCredits: number, bonusCredits: number): number {
+  return planCredits + (plan === "free" ? 0 : topupCredits) + bonusCredits
+}
+
 export async function getBalance(userId: string): Promise<CreditBalance | null> {
   const supabase = createDirectClient()
   const { data, error } = await supabase
     .from("profiles")
     .select(
-      "plan, plan_credits, topup_credits, subscription_status, current_period_end, billing_interval, stripe_customer_id",
+      "plan, plan_credits, topup_credits, bonus_credits, subscription_status, current_period_end, billing_interval, stripe_customer_id",
     )
     .eq("id", userId)
     .single()
@@ -46,14 +54,14 @@ export async function getBalance(userId: string): Promise<CreditBalance | null> 
   if (error || !data) return null
 
   const plan: PlanId = isPlanId(data.plan) ? data.plan : "free"
-  // Top-up credits are frozen (not lost) while a user is not subscribed.
-  const usableTopup = plan === "free" ? 0 : data.topup_credits
+  const bonus = data.bonus_credits ?? 0
 
   return {
     plan,
     planCredits: data.plan_credits,
     topupCredits: data.topup_credits,
-    total: data.plan_credits + usableTopup,
+    bonusCredits: bonus,
+    total: usableTotal(plan, data.plan_credits, data.topup_credits, bonus),
     subscriptionStatus: data.subscription_status,
     currentPeriodEnd: data.current_period_end,
     billingInterval: data.billing_interval,
@@ -69,12 +77,12 @@ interface SpendOptions {
   amount?: number
 }
 
-// Atomically debits credits (plan first, then top-up) and writes the ledger row.
-// A negative amount is a refund/credit back to the plan bucket.
+// Atomically debits credits (plan, then top-up, then bonus) and writes the ledger row.
+// A negative amount is a credit back: "bonus_grant" lands in the bonus bucket, everything else in plan.
 export async function spendCredits(
   userId: string,
   amount: number,
-  type: CreditAction | "refund" | "admin_adjust",
+  type: CreditAction | "refund" | "admin_adjust" | "bonus_grant",
   options: SpendOptions = {},
 ): Promise<SpendResult> {
   const supabase = createDirectClient()
@@ -91,25 +99,33 @@ export async function spendCredits(
 
   if (error || !data || data.length === 0) {
     console.error("[credits] spend_credits failed:", error?.message)
-    return { ok: false, code: "no_profile", planCredits: 0, topupCredits: 0, total: 0, plan: "free" }
+    return { ok: false, code: "no_profile", planCredits: 0, topupCredits: 0, bonusCredits: 0, total: 0, plan: "free" }
   }
 
   const row = data[0] as {
     ok: boolean
     plan_credits: number
     topup_credits: number
+    bonus_credits: number
     code: SpendCode
     plan: string
   }
   const plan: PlanId = isPlanId(row.plan) ? row.plan : "free"
+  const bonus = row.bonus_credits ?? 0
   return {
     ok: row.ok,
     code: row.code,
     planCredits: row.plan_credits,
     topupCredits: row.topup_credits,
-    total: row.plan_credits + (plan === "free" ? 0 : row.topup_credits),
+    bonusCredits: bonus,
+    total: usableTotal(plan, row.plan_credits, row.topup_credits, bonus),
     plan,
   }
+}
+
+/** Grant non-expiring bonus credits (beta promo, internal accounts). */
+export async function grantBonusCredits(userId: string, amount: number, description: string): Promise<SpendResult> {
+  return spendCredits(userId, -Math.abs(amount), "bonus_grant", { description })
 }
 
 export async function chargeForAction(
@@ -132,7 +148,11 @@ export async function setPlanCredits(
   description: string,
 ): Promise<void> {
   const supabase = createDirectClient()
-  const { data: profile } = await supabase.from("profiles").select("topup_credits").eq("id", userId).single()
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("topup_credits, bonus_credits")
+    .eq("id", userId)
+    .single()
 
   const { error } = await supabase.from("profiles").update({ plan_credits: planCredits }).eq("id", userId)
   if (error) throw new Error(`setPlanCredits failed: ${error.message}`)
@@ -142,7 +162,7 @@ export async function setPlanCredits(
     type: ledgerType,
     amount: planCredits,
     description,
-    balance_after: planCredits + (profile?.topup_credits ?? 0),
+    balance_after: planCredits + (profile?.topup_credits ?? 0) + (profile?.bonus_credits ?? 0),
   })
 }
 
@@ -150,7 +170,7 @@ export async function addTopupCredits(userId: string, credits: number, descripti
   const supabase = createDirectClient()
   const { data: profile, error: readError } = await supabase
     .from("profiles")
-    .select("plan_credits, topup_credits")
+    .select("plan_credits, topup_credits, bonus_credits")
     .eq("id", userId)
     .single()
   if (readError || !profile) throw new Error(`addTopupCredits: profile not found`)
@@ -164,7 +184,7 @@ export async function addTopupCredits(userId: string, credits: number, descripti
     type: "topup_purchase",
     amount: credits,
     description,
-    balance_after: profile.plan_credits + newTopup,
+    balance_after: profile.plan_credits + newTopup + (profile.bonus_credits ?? 0),
   })
 }
 

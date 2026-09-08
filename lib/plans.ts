@@ -16,6 +16,10 @@ export interface Plan {
 
 export const WELCOME_CREDITS = 45
 
+/** Non-expiring bonus for accounts created through /beta. Priced against the 50-credit top-up pack. */
+export const BETA_BONUS_CREDITS = 50
+export const BETA_BONUS_VALUE_CENTS = 1200
+
 export const CREDIT_COSTS = {
   upload: 1,
   transform: 10,

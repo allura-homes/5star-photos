@@ -20,6 +20,7 @@ type UserProfile = {
   plan: PlanId
   plan_credits: number
   topup_credits: number
+  bonus_credits: number
   subscription_status: string | null
   stripe_customer_id: string | null
   free_previews_used: number
@@ -285,9 +286,11 @@ export default function AdminPage() {
                           </td>
                           <td className="px-6 py-4">
                             <span className="text-amber-400 font-medium">{user.tokens}</span>
-                            {user.topup_credits > 0 && (
+                            {(user.topup_credits > 0 || user.bonus_credits > 0) && (
                               <span className="block text-xs text-slate-500">
-                                {user.plan_credits} plan + {user.topup_credits} top-up
+                                {user.plan_credits} plan
+                                {user.topup_credits > 0 && ` + ${user.topup_credits} top-up`}
+                                {user.bonus_credits > 0 && ` + ${user.bonus_credits} bonus`}
                               </span>
                             )}
                           </td>

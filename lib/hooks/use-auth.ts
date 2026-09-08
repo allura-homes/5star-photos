@@ -44,12 +44,15 @@ export interface UserProfile {
   display_name: string | null
   avatar_url: string | null
   role: UserRole
-  /** Usable credit balance, mirrored by a DB trigger from plan + top-up credits. */
+  /** Usable credit balance, mirrored by a DB trigger from plan + top-up + bonus credits. */
   tokens: number
   plan: PlanId
   billing_interval: BillingInterval | null
   plan_credits: number
   topup_credits: number
+  /** Non-expiring credits (beta promo, internal grants). */
+  bonus_credits: number
+  signup_source: string | null
   subscription_status: string | null
   current_period_end: string | null
   cancel_at_period_end: boolean | null

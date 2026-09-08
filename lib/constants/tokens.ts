@@ -19,17 +19,20 @@ export const TOKEN_COSTS = {
   revision: CREDIT_COSTS.transform,
 } as const
 
+// Mirrors the token_transactions.type CHECK constraint (scripts/021_bonus_credits.sql).
 export type TokenTransactionType =
   | "purchase"
-  | "signup_bonus"
-  | "plan_grant"
-  | "topup"
   | "revision"
   | "upscale"
+  | "bonus"
   | "refund"
-  | "admin_grant"
-  | "admin_deduct"
   | "upload"
   | "transform"
   | "save_variation"
   | "download_hires"
+  | "welcome_grant"
+  | "plan_grant"
+  | "period_reset"
+  | "topup_purchase"
+  | "admin_adjust"
+  | "bonus_grant"

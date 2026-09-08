@@ -17,12 +17,17 @@ const ICONS: Record<string, typeof Upload> = {
   upscale: Maximize2,
   purchase: ShoppingBag,
   topup: ShoppingBag,
+  topup_purchase: ShoppingBag,
   plan_grant: RefreshCw,
+  period_reset: RefreshCw,
   signup_bonus: Gift,
+  welcome_grant: Gift,
   bonus: Gift,
+  bonus_grant: Gift,
   refund: RefreshCw,
   admin_grant: Gift,
   admin_deduct: Coins,
+  admin_adjust: Coins,
 }
 
 const LABELS: Record<string, string> = {
@@ -34,12 +39,17 @@ const LABELS: Record<string, string> = {
   upscale: "Upscaled",
   purchase: "Credits added",
   topup: "Top-up purchased",
+  topup_purchase: "Top-up purchased",
   plan_grant: "Monthly credits",
+  period_reset: "Monthly credits renewed",
   signup_bonus: "Welcome credits",
+  welcome_grant: "Welcome credits",
   bonus: "Bonus credits",
+  bonus_grant: "Bonus credits (never expire)",
   refund: "Refund",
   admin_grant: "Credits granted",
   admin_deduct: "Credits adjusted",
+  admin_adjust: "Credits adjusted",
 }
 
 export function TransactionList({ transactions }: { transactions: Transaction[] }) {

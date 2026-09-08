@@ -112,10 +112,13 @@ export function BillingSection({ balance }: { balance: CreditBalance }) {
                 {balance.planCredits} {isFree ? "welcome" : "plan"} credits
                 {!isFree && ` of ${plan.monthlyCredits}`}
               </span>
-              <span>
-                {balance.topupCredits} top-up credits
-                {frozenTopup && " (held until you resubscribe)"}
-              </span>
+              {balance.bonusCredits > 0 && <span>{balance.bonusCredits} bonus credits (never expire)</span>}
+              {(balance.topupCredits > 0 || !isFree) && (
+                <span>
+                  {balance.topupCredits} top-up credits
+                  {frozenTopup && " (held until you resubscribe)"}
+                </span>
+              )}
             </div>
           </div>
         </div>
