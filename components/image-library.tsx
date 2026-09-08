@@ -5,9 +5,13 @@ import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { useDropzone } from "react-dropzone"
 import { getUserImages, deleteImage, deleteImages, updateImageClassification, uploadImage } from "@/lib/actions/image-actions"
+import { prepareImageForUpload } from "@/lib/compress-image"
 import { getUserProjects, assignImagesToProject } from "@/lib/actions/project-actions"
 import type { UserImage, PhotoClassification, Project } from "@/lib/types"
-import { TOKEN_COSTS } from "@/lib/constants/tokens"
+import { CREDIT_COSTS } from "@/lib/plans"
+import { InsufficientCreditsDialog, type CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
+import { FirstRunGuide } from "@/components/first-run-guide"
+import { toast } from "sonner"
 import { v4 as uuidv4 } from "uuid"
 import { loadPendingFiles, clearPendingFiles } from "@/lib/pending-files-storage"
 import { useAuthContext } from "@/lib/contexts/auth-context"
@@ -15,9 +19,10 @@ import { useAuthContext } from "@/lib/contexts/auth-context"
 // Model to user-friendly label mapping (matches transform page)
 const MODEL_LABELS: Record<string, string> = {
   openai_1_5: "V1",
-  nano_banana_pro: "V2",
-  flux_2_pro: "V3",
-  openai_2: "V4",
+  openai_2: "V2",
+  nano_banana_pro: "V3",
+  nano_banana: "V3",
+  flux_2_pro: "V4",
 }
 
 function getModelLabel(sourceModel: string | null | undefined): string {
@@ -92,8 +97,9 @@ function classifyFromFilename(filename: string): PhotoClassification {
 
 export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, setTokenBalance = () => {} }: ImageLibraryProps) {
   const router = useRouter()
-  const { isAuthenticated, isLoading: authLoading, user } = useAuthContext()
+  const { isAuthenticated, isLoading: authLoading, user, profile, refreshProfile } = useAuthContext()
   const [images, setImages] = useState<UserImage[]>([])
+  const [shortfall, setShortfall] = useState<CreditShortfall | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [expandedImages, setExpandedImages] = useState<Set<string>>(new Set())
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
@@ -202,7 +208,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     setPendingUploads((prev) => [...prev, ...newUploads])
   }, [])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: { "image/*": [".jpg", ".jpeg", ".png", ".webp", ".heic"] },
     maxSize: 50 * 1024 * 1024,
@@ -220,92 +226,46 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     setPendingUploads((prev) => prev.map((u) => (u.id === id ? { ...u, classification } : u)))
   }
 
-  // Compress image to reduce file size for large uploads (Vercel has ~4.5MB limit)
-  async function compressImage(file: File, maxSizeMB: number = 2.5): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const img = new window.Image()
-      img.crossOrigin = "anonymous"
-      
-      img.onload = () => {
-        const fileSizeMB = file.size / (1024 * 1024)
-        let scale = 1
-        
-        // More aggressive scaling for larger files
-        if (fileSizeMB > maxSizeMB) {
-          scale = Math.sqrt(maxSizeMB / fileSizeMB) * 0.9 // Extra 10% reduction
-        }
-        
-        // Limit max dimensions to 3000px
-        const maxDim = 3000
-        if (img.width > maxDim || img.height > maxDim) {
-          const dimScale = maxDim / Math.max(img.width, img.height)
-          scale = Math.min(scale, dimScale)
-        }
-        
-        const canvas = document.createElement("canvas")
-        canvas.width = Math.round(img.width * scale)
-        canvas.height = Math.round(img.height * scale)
-        
-        const ctx = canvas.getContext("2d")
-        if (!ctx) {
-          reject(new Error("Failed to get canvas context"))
-          return
-        }
-        
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        
-        // More aggressive quality for very large files
-        const quality = fileSizeMB > 8 ? 0.7 : fileSizeMB > 5 ? 0.75 : 0.8
-        const dataUrl = canvas.toDataURL("image/jpeg", quality)
-        
-        console.log(`[v0] Compressed: ${img.width}x${img.height} -> ${canvas.width}x${canvas.height}, quality: ${quality}, ~${(dataUrl.length * 0.75 / 1024 / 1024).toFixed(2)}MB`)
-        resolve(dataUrl)
-      }
-      
-      img.onerror = () => reject(new Error("Failed to load image for compression"))
-      img.src = URL.createObjectURL(file)
-    })
-  }
-
   async function handleUploadAll() {
     const pendingCount = pendingUploads.filter((u) => u.status === "pending").length
-    // const cost = pendingCount * TOKEN_COSTS.upload
-    // TEMPORARILY DISABLED: Token check bypassed for development
-    // if (cost > tokenBalance) {
-    //   return // Button should be disabled, but just in case
-    // }
+    const cost = pendingCount * CREDIT_COSTS.upload
+    // BILLING: quick client-side check; the server action re-checks and
+    // charges per file, and a 402-style result stops the loop.
+    if (cost > tokenBalance) {
+      setShortfall({ required: cost, available: tokenBalance, plan: profile?.plan ?? "free" })
+      return
+    }
 
     setIsUploading(true)
+    let stoppedForCredits = false
 
     for (const upload of pendingUploads) {
-      if (upload.status !== "pending") continue
+      if (upload.status !== "pending" || stoppedForCredits) continue
 
       setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "uploading" } : u)))
 
       try {
-        // Compress large images before upload (Vercel serverless limit is ~4.5MB)
-        let base64: string
-        const fileSizeMB = upload.file.size / (1024 * 1024)
-        
-        if (fileSizeMB > 2.5) {
-          console.log(`[v0] Large file detected (${fileSizeMB.toFixed(2)}MB), compressing...`)
-          base64 = await compressImage(upload.file, 2.5)
-        } else {
-          base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = reject
-            reader.readAsDataURL(upload.file)
+        // Shrinks anything over the upload budget so it fits the server-action body limit
+        const base64 = await prepareImageForUpload(upload.file)
+
+        const result = await uploadImage(base64, upload.file.name, "image/jpeg", upload.classification)
+
+        if (result.code === "INSUFFICIENT_CREDITS" || result.code === "PAST_DUE") {
+          stoppedForCredits = true
+          setShortfall({
+            required: result.required ?? CREDIT_COSTS.upload,
+            available: result.available ?? 0,
+            plan: result.plan ?? profile?.plan ?? "free",
+            pastDue: result.code === "PAST_DUE",
           })
-        }
-
-        const { error } = await uploadImage(base64, upload.file.name, "image/jpeg", upload.classification)
-
-        if (error) {
-          setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "error", error } : u)))
+          setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "pending" } : u)))
+        } else if (result.error) {
+          setPendingUploads((prev) =>
+            prev.map((u) => (u.id === upload.id ? { ...u, status: "error", error: result.error } : u)),
+          )
         } else {
           setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "done" } : u)))
-          setTokenBalance((prev) => Math.max(0, prev - 1))
+          setTokenBalance((prev) => Math.max(0, prev - CREDIT_COSTS.upload))
         }
       } catch (err) {
         setPendingUploads((prev) =>
@@ -315,8 +275,16 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     }
 
     setIsUploading(false)
+    refreshProfile()
+    if (stoppedForCredits) return
     setTimeout(() => {
-      setPendingUploads([])
+      setPendingUploads((current) => {
+        const failed = current.filter((u) => u.status === "error").length
+        const done = current.filter((u) => u.status === "done").length
+        if (done > 0) toast.success(`${done} photo${done === 1 ? "" : "s"} uploaded. Open one and press Transform.`)
+        if (failed > 0) toast.error(`${failed} photo${failed === 1 ? "" : "s"} couldn't be uploaded. Try again.`)
+        return []
+      })
       loadImages()
     }, 1000)
   }
@@ -511,12 +479,17 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
 
   if (images.length === 0) {
     const pendingCount = pendingUploads.filter((u) => u.status === "pending").length
-    const uploadCost = pendingCount * TOKEN_COSTS.upload
-    // TEMPORARILY DISABLED: Token limits bypassed for development
-    const hasInsufficientTokens = false // was: uploadCost > tokenBalance
+    const uploadCost = pendingCount * CREDIT_COSTS.upload
+    const hasInsufficientTokens = uploadCost > tokenBalance
 
     return (
-      <div className="bg-white/5 rounded-2xl border border-white/10 p-6">
+      <div className="flex flex-col gap-8">
+        <InsufficientCreditsDialog shortfall={shortfall} onClose={() => setShortfall(null)} />
+        {pendingUploads.length === 0 && (
+          <FirstRunGuide onSampleAdded={loadImages} onUploadClick={() => open()} />
+        )}
+
+        <div className="bg-white/5 rounded-2xl border border-white/10 p-6">
         <div
           {...getRootProps()}
           className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
@@ -529,7 +502,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
           <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragActive ? "text-[#FF3EDB]" : "text-slate-500"}`} />
           <p className="text-white font-medium mb-2">{isDragActive ? "Drop photos here" : "Drag & drop photos here"}</p>
           <p className="text-slate-400 text-sm mb-2">or click to browse (JPG, PNG, WebP, HEIC up to 50MB each)</p>
-          <p className="text-green-400 text-sm">Unlimited uploads - development mode</p>
+          <p className="text-slate-500 text-sm">{CREDIT_COSTS.upload} credit per photo</p>
         </div>
 
         {pendingUploads.length > 0 && (
@@ -537,7 +510,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
             <div className="flex items-center justify-between mb-4">
               <span className="text-slate-300">{pendingUploads.length} photos selected</span>
               {hasInsufficientTokens && (
-                <span className="text-red-400 text-sm">Cost: {uploadCost} tokens (insufficient balance)</span>
+                <span className="text-red-400 text-sm">Cost: {uploadCost} credits (you have {tokenBalance})</span>
               )}
             </div>
 
@@ -610,17 +583,18 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
             {hasInsufficientTokens ? (
               <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-center">
                 <AlertTriangle className="w-6 h-6 text-red-400 mx-auto mb-2" />
-                <p className="text-white font-medium mb-1">Insufficient Tokens</p>
+                <p className="text-white font-medium mb-1">Not enough credits</p>
                 <p className="text-slate-400 text-sm mb-3">
-                  You need {uploadCost} tokens but only have {tokenBalance}. Remove {pendingCount - tokenBalance}{" "}
-                  photo(s) or buy more tokens.
+                  You need {uploadCost} credit{uploadCost !== 1 ? "s" : ""} but have {tokenBalance}. Remove{" "}
+                  {pendingCount - tokenBalance} photo{pendingCount - tokenBalance !== 1 ? "s" : ""} or add credits.
                 </p>
-                <a
-                  href="mailto:support@5star.photos?subject=Purchase%20Tokens"
+                <button
+                  type="button"
+                  onClick={() => setShortfall({ required: uploadCost, available: tokenBalance, plan: profile?.plan ?? "free" })}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors text-sm font-medium"
                 >
-                  Contact to Buy Tokens
-                </a>
+                  Get more credits
+                </button>
               </div>
             ) : (
               <button
@@ -634,25 +608,21 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
                     Uploading...
                   </span>
                 ) : (
-                  `Upload ${pendingCount} Photo${pendingCount !== 1 ? "s" : ""} (${uploadCost} token${uploadCost !== 1 ? "s" : ""})`
+                  `Upload ${pendingCount} Photo${pendingCount !== 1 ? "s" : ""} (${uploadCost} credit${uploadCost !== 1 ? "s" : ""})`
                 )}
               </button>
             )}
           </div>
         )}
 
-        {pendingUploads.length === 0 && (
-          <div className="text-center mt-6">
-            <ImageIcon className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-400">Your library is empty. Drop photos above to get started.</p>
-          </div>
-        )}
+        </div>
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
+      <InsufficientCreditsDialog shortfall={shortfall} onClose={() => setShortfall(null)} />
       {images.map((image) => {
         const isExpanded = expandedImages.has(image.id)
         const variationCount = image.variations?.length || 0

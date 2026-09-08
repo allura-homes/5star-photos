@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest } from 'next/server'
+import { requireUser } from '@/lib/api-auth'
 
 export async function GET(
   request: NextRequest,
@@ -7,13 +8,16 @@ export async function GET(
 ) {
   try {
     const { jobId } = await params
+    const auth = await requireUser(request)
+    if (!auth.ok) return auth.response
+
     const supabase = await createClient()
 
-    const { data: job, error } = await supabase
-      .from('jobs')
-      .select('*')
-      .eq('id', jobId)
-      .single()
+    // RLS also enforces this, but scope explicitly so a policy regression
+    // can't expose another user's job. Admins may view any job.
+    let query = supabase.from('jobs').select('*').eq('id', jobId)
+    if (!auth.isAdmin) query = query.eq('user_id', auth.user.id)
+    const { data: job, error } = await query.single()
 
     if (error) {
       console.error('[v0] Job fetch error:', error)

@@ -3,8 +3,9 @@
 import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { useAuthContext } from "@/lib/contexts/auth-context"
-import { User, LogOut, Settings, History, Shield, Coins, ChevronDown, Images } from "lucide-react"
+import { User, LogOut, History, Shield, Coins, ChevronDown, Images, HelpCircle, BarChart3, Sparkles } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
+import { PLANS, CREDIT_COSTS } from "@/lib/plans"
 
 export function UserMenu() {
   const { user, profile, isAuthenticated, isAdmin, signOut, isLoading } = useAuthContext()
@@ -48,6 +49,9 @@ export function UserMenu() {
 
   const displayName = profile?.display_name || user?.email?.split("@")[0] || "User"
   const initials = displayName.slice(0, 2).toUpperCase()
+  const credits = profile?.tokens ?? 0
+  const plan = profile?.plan ?? "free"
+  const lowCredits = credits < CREDIT_COSTS.transform
 
   return (
     <div ref={menuRef} className="relative">
@@ -68,13 +72,19 @@ export function UserMenu() {
           </div>
         )}
 
-        {/* Name and tokens */}
+        {/* Name and credits */}
         <div className="hidden sm:flex flex-col items-start">
           <span className="text-sm font-medium text-white">{displayName}</span>
-          <div className="flex items-center gap-1 text-xs text-amber-400">
-            <Coins className="w-3 h-3" />
-            <span>{profile?.tokens || 0} tokens</span>
-          </div>
+          {profile ? (
+            <div className={`flex items-center gap-1 text-xs ${lowCredits ? "text-red-300" : "text-amber-400"}`}>
+              <Coins className="w-3 h-3" />
+              <span>
+                {credits} {credits === 1 ? "credit" : "credits"}
+              </span>
+            </div>
+          ) : (
+            <span className="h-3 w-16 rounded bg-white/10 animate-pulse" aria-hidden="true" />
+          )}
         </div>
 
         <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -108,9 +118,20 @@ export function UserMenu() {
                 </span>
                 <span className="flex items-center gap-1 text-xs text-amber-400">
                   <Coins className="w-3 h-3" />
-                  {profile?.tokens || 0} tokens
+                  {credits} credits
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#FF3EDB]/15 text-[#FF3EDB]">
+                  {PLANS[plan].name}
                 </span>
               </div>
+              <Link
+                href={plan === "free" ? "/pricing" : "/account"}
+                onClick={() => setIsOpen(false)}
+                className="mt-3 flex items-center justify-center gap-2 rounded-lg gradient-magenta-violet px-3 py-2 text-xs font-semibold text-white"
+              >
+                <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+                {plan === "free" ? "Get monthly credits" : "Buy more credits"}
+              </Link>
             </div>
 
             {/* Menu items */}
@@ -137,26 +158,36 @@ export function UserMenu() {
                 className="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
               >
                 <History className="w-4 h-4" />
-                History
+                Activity
               </Link>
               <Link
-                href="/account/settings"
+                href="/help"
                 onClick={() => setIsOpen(false)}
                 className="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
               >
-                <Settings className="w-4 h-4" />
-                Settings
+                <HelpCircle className="w-4 h-4" />
+                Help
               </Link>
 
               {isAdmin && (
-                <Link
-                  href="/admin"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
-                >
-                  <Shield className="w-4 h-4" />
-                  Admin Dashboard
-                </Link>
+                <>
+                  <Link
+                    href="/admin"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
+                  >
+                    <Shield className="w-4 h-4" />
+                    Admin Dashboard
+                  </Link>
+                  <Link
+                    href="/admin/training"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors md:hidden"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    Model Training
+                  </Link>
+                </>
               )}
             </div>
 

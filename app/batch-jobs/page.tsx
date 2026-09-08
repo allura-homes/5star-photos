@@ -1,4 +1,4 @@
-import { Sidebar } from '@/components/sidebar'
+import { AppShell } from '@/components/app-shell'
 import { getAllJobs } from '@/lib/actions/job-actions'
 import { Clock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import Link from 'next/link'
@@ -32,12 +32,14 @@ export default async function BatchJobsPage() {
     return labels[status] || status
   }
 
+  // LEGACY (admin-only): the job-based pipeline is retired for regular users.
+  // Middleware redirects non-admins to /library. Kept for support/debugging.
   return (
-    <div className="min-h-screen flex">
-      <Sidebar />
-      
-      <main className="flex-1 ml-20 p-8 overflow-y-auto">
+    <AppShell>
         <div className="max-w-6xl mx-auto">
+          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            Legacy pipeline (admin view). New work happens in Library.
+          </div>
           {/* Hero Card */}
           <div className="glass-card-strong rounded-[32px] p-12 mb-8 flex flex-col items-center text-center">
             <div className="relative mb-6">
@@ -48,9 +50,9 @@ export default async function BatchJobsPage() {
               </div>
             </div>
 
-            <h1 className="text-4xl font-bold text-white mb-3">Batch Jobs</h1>
+            <h1 className="text-4xl font-bold text-white mb-3">Legacy Jobs</h1>
             <p className="text-lg text-[#C9CCDA] max-w-2xl text-balance">
-              View your photo enhancement history and manage ongoing jobs.
+              All enhancement jobs from the retired job-based pipeline, across every user.
             </p>
           </div>
 
@@ -64,12 +66,12 @@ export default async function BatchJobsPage() {
             ) : !jobs || jobs.length === 0 ? (
               <div className="text-center py-12">
                 <Clock className="w-12 h-12 text-[#C9CCDA] mx-auto mb-4" />
-                <p className="text-[#C9CCDA]">No jobs yet. Start by uploading photos!</p>
+                <p className="text-[#C9CCDA]">No legacy jobs recorded.</p>
                 <Link
-                  href="/enhance"
+                  href="/library"
                   className="inline-block mt-6 px-6 py-3 rounded-xl gradient-magenta-violet text-white font-medium hover:scale-105 transition-all duration-300"
                 >
-                  Upload Photos
+                  Go to Library
                 </Link>
               </div>
             ) : (
@@ -127,7 +129,6 @@ export default async function BatchJobsPage() {
             )}
           </div>
         </div>
-      </main>
-    </div>
+    </AppShell>
   )
 }

@@ -1,38 +1,31 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
-import { getFeedbackStats, getAllFeedback, markAsExemplary } from "@/lib/actions/feedback-actions"
+import { AppShell } from "@/components/app-shell"
+import { getFeedbackStats, getAllFeedback, markAsExemplary, type FeedbackStats } from "@/lib/actions/feedback-actions"
 import type { ModelFeedback, ModelProvider } from "@/lib/types"
+import { MODELS, ACTIVE_MODELS } from "@/lib/constants/models"
 import { ThumbsUp, ThumbsDown, Star, Filter, BarChart3, Loader2, ExternalLink } from "lucide-react"
 import Image from "next/image"
 
-// TODO: Add authentication check here when auth is implemented
-// This page should only be accessible to admin users
-// Example: if (!user?.isAdmin) redirect('/');
+// Access control: middleware (lib/supabase/proxy.ts) redirects non-admins
+// away from /admin/* before this page renders.
 
-const MODEL_LABELS: Record<ModelProvider, string> = {
-  openai_1_5: "V1 (GPT Image)",
-  nano_banana_pro: "V2 (Nano Banana)",
-  flux_2_pro: "V3 (FLUX.2 Pro)",
-  openai: "GPT Image 1 (Deprecated)",
-  openai_mini: "GPT Mini (Deprecated)",
-}
+const MODEL_LABELS: Record<ModelProvider, string> = Object.fromEntries(
+  MODELS.map((m) => [m.provider, `${m.label} (${m.modelId})${m.active ? "" : " - retired"}`]),
+) as Record<ModelProvider, string>
 
 const MODEL_COLORS: Record<ModelProvider, string> = {
-  openai_1_5: "#74AA9C",
+  openai: "#74AA9C",
   nano_banana_pro: "#FF6B35",
+  openai_2: "#38BDF8",
   flux_2_pro: "#8B5CF6",
-  openai: "#999999",
+  openai_1_5: "#999999",
   openai_mini: "#666666",
 }
 
 export default function TrainingDashboard() {
-  const [stats, setStats] = useState<{
-    openai: { thumbs_up: number; thumbs_down: number }
-    gemini_flash: { thumbs_up: number; thumbs_down: number }
-    nano_banana_pro: { thumbs_up: number; thumbs_down: number }
-  } | null>(null)
+  const [stats, setStats] = useState<FeedbackStats | null>(null)
   const [feedback, setFeedback] = useState<ModelFeedback[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedModel, setSelectedModel] = useState<ModelProvider | "all">("all")
@@ -67,11 +60,15 @@ export default function TrainingDashboard() {
 
   const totalFeedback = stats ? Object.values(stats).reduce((sum, s) => sum + s.thumbs_up + s.thumbs_down, 0) : 0
 
-  return (
-    <div className="min-h-screen flex">
-      <Sidebar />
+  // Only show stat cards for models that have ever received feedback or are active.
+  const statProviders = stats
+    ? (Object.keys(stats) as ModelProvider[]).filter(
+        (p) => ACTIVE_MODELS.some((m) => m.provider === p) || stats[p].thumbs_up + stats[p].thumbs_down > 0,
+      )
+    : []
 
-      <main className="flex-1 ml-20 p-8 overflow-y-auto">
+  return (
+    <AppShell>
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="mb-8">
@@ -79,19 +76,15 @@ export default function TrainingDashboard() {
               <BarChart3 className="w-8 h-8 text-[#FF3EDB]" />
               <h1 className="text-4xl font-bold text-white">Model Training Dashboard</h1>
             </div>
-            <p className="text-lg text-[#C9CCDA]">Review feedback, mark exemplary outputs, and tune model behavior</p>
-            {/* Admin notice */}
-            <div className="mt-4 p-3 rounded-xl bg-[#FFB341]/10 border border-[#FFB341]/30">
-              <p className="text-sm text-[#FFB341]">
-                Admin-only area. Authentication will be required when user roles are implemented.
-              </p>
-            </div>
+            <p className="text-lg text-[#C9CCDA]">
+              Review feedback, mark exemplary outputs, and tune model behavior. {totalFeedback} ratings collected.
+            </p>
           </div>
 
           {/* Stats Overview */}
           {stats && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              {(Object.keys(stats) as ModelProvider[]).map((provider) => {
+              {statProviders.map((provider) => {
                 const modelStats = stats[provider]
                 const total = modelStats.thumbs_up + modelStats.thumbs_down
                 const approvalRate = total > 0 ? Math.round((modelStats.thumbs_up / total) * 100) : 0
@@ -144,9 +137,11 @@ export default function TrainingDashboard() {
                 className="px-4 py-2 rounded-xl bg-white/10 text-white border border-white/20 focus:border-[#FF3EDB] focus:outline-none"
               >
                 <option value="all">All Models</option>
-                <option value="openai">OpenAI (v1)</option>
-                <option value="gemini_flash">Gemini Flash (v2)</option>
-                <option value="nano_banana_pro">Nano Banana Pro (v3)</option>
+                {MODELS.map((m) => (
+                  <option key={m.provider} value={m.provider}>
+                    {MODEL_LABELS[m.provider]}
+                  </option>
+                ))}
               </select>
 
               <select
@@ -299,7 +294,6 @@ export default function TrainingDashboard() {
             </div>
           )}
         </div>
-      </main>
-    </div>
+    </AppShell>
   )
 }

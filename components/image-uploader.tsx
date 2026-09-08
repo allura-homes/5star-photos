@@ -6,15 +6,19 @@ import Image from "next/image"
 import { uploadImage } from "@/lib/actions/image-actions"
 import { getUserProjects, createProject } from "@/lib/actions/project-actions"
 import type { PhotoClassification, Project } from "@/lib/types"
-import { Upload, X, Loader2, Home, Mountain, HelpCircle, Check, AlertCircle, AlertTriangle, FolderOpen, Plus, ChevronDown } from "lucide-react"
+import { Upload, X, Loader2, Home, Mountain, HelpCircle, Check, AlertCircle, FolderOpen, Plus, ChevronDown, Coins } from "lucide-react"
 import { v4 as uuidv4 } from "uuid"
-import { TOKEN_COSTS } from "@/lib/constants/tokens"
+import { CREDIT_COSTS, type PlanId } from "@/lib/plans"
+import { InsufficientCreditsDialog, type CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
 
 interface ImageUploaderProps {
   onComplete: () => void
   onCancel: () => void
   tokenBalance: number
+  plan?: PlanId
   preselectedProjectId?: string | null
+  /** Called after any successful upload so the header balance refreshes. */
+  onCreditsSpent?: () => void
 }
 
 interface PendingUpload {
@@ -57,10 +61,17 @@ function classifyFromFilename(filename: string): PhotoClassification {
   return "unknown"
 }
 
-export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedProjectId }: ImageUploaderProps) {
+export function ImageUploader({
+  onComplete,
+  onCancel,
+  tokenBalance,
+  plan = "free",
+  preselectedProjectId,
+  onCreditsSpent,
+}: ImageUploaderProps) {
   const [uploads, setUploads] = useState<PendingUpload[]>([])
   const [isUploading, setIsUploading] = useState(false)
-  const [showInsufficientTokensWarning, setShowInsufficientTokensWarning] = useState(false)
+  const [shortfall, setShortfall] = useState<CreditShortfall | null>(null)
   
   // Project selection state
   const [projects, setProjects] = useState<Project[]>([])
@@ -198,18 +209,22 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
   async function handleUpload() {
     if (uploads.length === 0) return
 
-    // TEMPORARILY DISABLED: Token checks bypassed for development
-    // const pendingUploads = uploads.filter((u) => u.status === "pending")
-    // const requiredTokens = pendingUploads.length * TOKEN_COSTS.upload
-    // if (requiredTokens > tokenBalance) {
-    //   setShowInsufficientTokensWarning(true)
-    //   return
-    // }
+    // BILLING: quick client-side check so a batch that clearly cannot be paid
+    // for does not start; the server action re-checks and charges per file.
+    const pendingUploads = uploads.filter((u) => u.status === "pending")
+    const cost = pendingUploads.length * CREDIT_COSTS.upload
+    if (cost > tokenBalance) {
+      setShortfall({ required: cost, available: tokenBalance, plan })
+      return
+    }
 
     setIsUploading(true)
+    let anyPaid = false
+    let stoppedForCredits = false
 
     for (const upload of uploads) {
       if (upload.status !== "pending") continue
+      if (stoppedForCredits) break
 
       setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "uploading" } : u)))
 
@@ -246,7 +261,7 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
         }
 
         // Create database record via server action (it handles storage upload)
-        const { error: dbError } = await uploadImage(
+        const result = await uploadImage(
           base64,
           upload.file.name,
           contentType,
@@ -254,8 +269,21 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
           selectedProjectId,
         )
 
-        if (dbError) throw new Error(dbError)
+        if (result.code === "INSUFFICIENT_CREDITS" || result.code === "PAST_DUE") {
+          stoppedForCredits = true
+          setShortfall({
+            required: result.required ?? CREDIT_COSTS.upload,
+            available: result.available ?? 0,
+            plan: result.plan ?? plan,
+            pastDue: result.code === "PAST_DUE",
+          })
+          setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "pending" } : u)))
+          continue
+        }
 
+        if (result.error) throw new Error(result.error)
+
+        anyPaid = true
         setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "done" } : u)))
       } catch (err) {
         console.error("[v0] Upload error:", err)
@@ -274,9 +302,10 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
     }
 
     setIsUploading(false)
+    if (anyPaid) onCreditsSpent?.()
 
     // Check if all uploads completed successfully
-    const allDone = uploads.every((u) => u.status === "done")
+    const allDone = !stoppedForCredits && uploads.every((u) => u.status === "done")
     if (allDone) {
       setTimeout(onComplete, 500)
     }
@@ -285,52 +314,12 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
   const pendingCount = uploads.filter((u) => u.status === "pending").length
   const doneCount = uploads.filter((u) => u.status === "done").length
   const errorCount = uploads.filter((u) => u.status === "error").length
-  // TEMPORARILY DISABLED: Token limits bypassed for development
-  const requiredTokens = 0 // was: pendingCount * TOKEN_COSTS.upload
-  const hasInsufficientTokens = false // was: requiredTokens > tokenBalance
+  const requiredCredits = pendingCount * CREDIT_COSTS.upload
+  const hasInsufficientCredits = requiredCredits > tokenBalance
 
   return (
     <>
-      {showInsufficientTokensWarning && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card rounded-2xl p-8 max-w-md w-full">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-6 h-6 text-amber-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-semibold text-white mb-2">Insufficient Tokens</h3>
-                <p className="text-slate-300 mb-4">
-                  You're trying to upload {pendingCount} photo{pendingCount !== 1 ? "s" : ""} ({requiredTokens} token
-                  {requiredTokens !== 1 ? "s" : ""}), but you only have {tokenBalance} token
-                  {tokenBalance !== 1 ? "s" : ""} available.
-                </p>
-                <p className="text-slate-400 text-sm">
-                  Please reduce the number of photos or purchase more tokens to continue.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowInsufficientTokensWarning(false)}
-                className="flex-1 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-medium transition-colors"
-              >
-                Reduce Photos
-              </button>
-              <button
-                onClick={() => {
-                  window.open("mailto:support@5starphotos.com?subject=Token Purchase Request", "_blank")
-                  setShowInsufficientTokensWarning(false)
-                }}
-                className="flex-1 px-4 py-3 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all"
-              >
-                Buy Tokens
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <InsufficientCreditsDialog shortfall={shortfall} onClose={() => setShortfall(null)} />
 
       <div className="glass-card rounded-2xl p-6">
         {/* Header */}
@@ -471,7 +460,10 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
           <Upload className="w-12 h-12 text-slate-400 mx-auto mb-4" />
           <p className="text-white font-medium mb-2">{isDragActive ? "Drop photos here" : "Drag & drop photos here"}</p>
           <p className="text-slate-400 text-sm">or click to browse (JPG, PNG, WebP, HEIC up to 50MB each)</p>
-          <p className="text-green-400 text-sm mt-2">Unlimited uploads - development mode</p>
+          <p className="mt-2 flex items-center justify-center gap-1.5 text-sm text-slate-500">
+            <Coins className="size-3.5 text-amber-400" aria-hidden="true" />
+            {CREDIT_COSTS.upload} credit per photo
+          </p>
         </div>
 
         {/* Upload queue */}
@@ -484,8 +476,9 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
                 {errorCount > 0 && ` (${errorCount} failed)`}
               </p>
               {!isUploading && pendingCount > 0 && (
-                <p className="text-sm font-medium text-green-400">
-                  Free (development mode)
+                <p className={`text-sm font-medium ${hasInsufficientCredits ? "text-red-400" : "text-emerald-400"}`}>
+                  {requiredCredits} credit{requiredCredits !== 1 ? "s" : ""}
+                  {hasInsufficientCredits ? ` · you have ${tokenBalance}` : ""}
                 </p>
               )}
             </div>
@@ -577,7 +570,7 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
                 onClick={handleUpload}
                 disabled={isUploading}
                 className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
-                  hasInsufficientTokens
+                  hasInsufficientCredits
                     ? "bg-red-500/20 text-red-400 border-2 border-red-500/40 hover:bg-red-500/30"
                     : "gradient-magenta-violet hover:scale-[1.02]"
                 }`}
@@ -587,10 +580,15 @@ export function ImageUploader({ onComplete, onCancel, tokenBalance, preselectedP
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Uploading...
                   </>
+                ) : hasInsufficientCredits ? (
+                  <>
+                    <Coins className="w-4 h-4" />
+                    Not enough credits
+                  </>
                 ) : (
                   <>
                     <Upload className="w-4 h-4" />
-                    Upload {pendingCount} Photo{pendingCount !== 1 ? "s" : ""} (Free)
+                    Upload {pendingCount} Photo{pendingCount !== 1 ? "s" : ""} ({requiredCredits} credit{requiredCredits !== 1 ? "s" : ""})
                   </>
                 )}
               </button>

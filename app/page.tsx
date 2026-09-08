@@ -197,7 +197,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="py-20 px-6 bg-gradient-to-b from-transparent to-[#0B0D1A]">
+      <section className="py-20 px-6 bg-gradient-to-b from-transparent to-black/40">
         <div className="max-w-5xl mx-auto">
           <h2 className="text-4xl md:text-5xl font-bold text-white text-center mb-16">How It Works</h2>
 

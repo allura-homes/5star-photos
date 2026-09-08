@@ -1,5 +1,7 @@
-import type { Request } from "next/server"
+import type { NextRequest } from "next/server"
 import { Buffer } from "buffer"
+import { requireUser } from "@/lib/api-auth"
+import { createDirectClient } from "@/lib/supabase/direct"
 
 interface CloudinaryEdits {
   brightness: number
@@ -329,12 +331,19 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
       
       console.error(`[v0] OpenAI ${model} response error (${response.status}):`, errorText.substring(0, 300))
       
-      // Handle rate limiting with retry
-      if (response.status === 429 && retryCount < MAX_RETRIES) {
+      // Retry on transient errors: 429 rate limits AND 5xx gateway/server
+      // errors (e.g. 502 Bad Gateway, 503, 504, 500 from OpenAI/Cloudflare).
+      // These are temporary on OpenAI's side and almost always succeed on retry.
+      // Previously only 429 was retried, so a 502 threw immediately - which is
+      // exactly the "502 Bad gateway" error this handler now recovers from.
+      const isTransientStatus =
+        response.status === 429 || response.status >= 500
+      if (isTransientStatus && retryCount < MAX_RETRIES) {
         const baseDelay = BASE_DELAY * Math.pow(2, retryCount)
         const jitter = Math.random() * 1000
         const delay = baseDelay + jitter
-        console.log(`[v0] Rate limited, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+        const label = response.status === 429 ? "Rate limited" : `Server error ${response.status}`
+        console.log(`[v0] ${label}, retrying in ${Math.round(delay)}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
         await new Promise(resolve => setTimeout(resolve, delay))
         return generateOpenAIImage(originalUrl, imagePrompt, model, retryCount + 1)
       }
@@ -659,7 +668,7 @@ MANDATORY FRAMING RULES (DO NOT VIOLATE):
       
       try {
         response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent?key=${apiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -957,14 +966,68 @@ The final image should look like it was shot with professional studio lighting -
  *
  * Supported Providers:
  * - nano_banana / nano_banana_pro: Nano Banana Pro (Gemini 3 Pro) - V1
- * - openai: OpenAI GPT Image 1 via Images Edits API - V2
- * - openai_mini: OpenAI GPT Image 1 Mini via Images Edits API - V3
- * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API - V4
+ * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API - V1
+ * - openai_2: OpenAI GPT Image 2 via Images Edits API - V2
+ * - nano_banana_pro: Google Gemini 3 Pro Image - V3
  *
  * See MODEL_CONFIGURATION.md for model details.
  */
 
-export async function POST(req: Request) {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export async function POST(req: NextRequest) {
+  // SECURITY: this route spends paid OpenAI / Gemini / fal credits.
+  // Reject unauthenticated callers before reading the body.
+  const auth = await requireUser(req)
+  if (!auth.ok) return auth.response
+
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+  } catch {
+    return Response.json({ error: "Invalid request body", code: "BAD_REQUEST" }, { status: 400 })
+  }
+
+  // BILLING: AI generations must reference a transform the caller already paid
+  // for via startTransform(). The charge row also fixes which models the plan
+  // may run, so a Start-up user cannot request a Pro-only model by hand.
+  const useAi = body.use_ai_models !== false
+  const transformId = typeof body.transform_id === "string" ? body.transform_id : null
+  const admin = createDirectClient()
+
+  if (useAi) {
+    if (!transformId || !UUID_RE.test(transformId)) {
+      return Response.json({ error: "Start a transform before requesting variations.", code: "NO_TRANSFORM" }, { status: 402 })
+    }
+    const { data: charge } = await admin
+      .from("transform_charges")
+      .select("transform_id, models, refunded_at, charged_at")
+      .eq("transform_id", transformId)
+      .eq("user_id", auth.user.id)
+      .single()
+
+    const ageMs = charge ? Date.now() - new Date(charge.charged_at).getTime() : Infinity
+    if (!charge || charge.refunded_at || ageMs > 30 * 60 * 1000) {
+      return Response.json({ error: "This transform has expired. Start a new one.", code: "TRANSFORM_EXPIRED" }, { status: 402 })
+    }
+    if (!charge.models.includes(String(body.provider))) {
+      return Response.json(
+        { error: "This model is available on Pro and Max plans.", code: "MODEL_LOCKED" },
+        { status: 403 },
+      )
+    }
+  }
+
+  const response = await runEditImage(body)
+
+  if (useAi && transformId && response.ok) {
+    await admin.rpc("increment_transform_success", { p_transform_id: transformId })
+  }
+
+  return response
+}
+
+async function runEditImage(body: Record<string, unknown>): Promise<Response> {
   try {
     const {
       original_url,
@@ -978,7 +1041,7 @@ export async function POST(req: Request) {
       room_type_guess,
       apply_watermark = true,
       style_mode, // Accept style_mode to determine if AI should be used
-    } = await req.json()
+    } = body as any
 
     console.log(`[v0] Edit-image API called - Provider: ${provider}, Variation: ${variation_number}`)
 
@@ -1104,7 +1167,7 @@ export async function POST(req: Request) {
           throw err
         }
       } else if (provider === "nano_banana" || provider === "nano_banana_pro" || provider === "gemini_3_pro") {
-        console.log(`[v0] Calling Nano Banana Pro / Gemini 3 Pro (v${variation_number})`)
+        console.log(`[v0] Calling Google Gemini 3 Pro Image (v${variation_number})`)
         try {
           // Nano Banana tends to produce warm/orange lighting for indoor photos
           // Add explicit lighting guidance to counteract this tendency
@@ -1221,15 +1284,32 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("[v0] Edit-image API error:", error)
 
+    // Classify the failure so the UI can show plain language. Provider error
+    // bodies are logged above but never returned to the browser.
     const errorMessage = error instanceof Error ? error.message : String(error)
-    const status = errorMessage.includes("quota") || errorMessage.includes("429") ? 429 : 500
+    const lower = errorMessage.toLowerCase()
+    let code = "GENERATION_FAILED"
+    let status = 500
+    let friendly = "This model couldn't finish. The other variations aren't affected."
 
-    return Response.json(
-      {
-        error: "Failed to generate edited image",
-        details: errorMessage,
-      },
-      { status },
-    )
+    if (lower.includes("quota") || lower.includes("429") || lower.includes("rate limit")) {
+      code = "RATE_LIMITED"
+      status = 429
+      friendly = "This model is busy right now. Try again in a minute."
+    } else if (lower.includes("timeout") || lower.includes("abort")) {
+      code = "TIMEOUT"
+      status = 504
+      friendly = "This model took too long to respond. Try again."
+    } else if (lower.includes("safety") || lower.includes("content policy") || lower.includes("blocked")) {
+      code = "CONTENT_BLOCKED"
+      status = 422
+      friendly = "This model declined to edit the photo. Try a different variation."
+    } else if (lower.includes("not found") || lower.includes("404") || lower.includes("does not exist")) {
+      code = "MODEL_UNAVAILABLE"
+      status = 503
+      friendly = "This model is temporarily unavailable."
+    }
+
+    return Response.json({ error: friendly, code }, { status })
   }
 }

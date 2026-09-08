@@ -2,7 +2,7 @@ export type JobStatus = "uploaded" | "processing_preview" | "preview_ready" | "p
 
 export type StyleMode = "full_5star_fix"
 
-export type ModelProvider = "openai_1_5" | "nano_banana_pro" | "openai" | "openai_mini" | "flux_2_pro" | "openai_2"
+export type ModelProvider = "openai_1_5" | "nano_banana_pro" | "openai_2" | "flux_2_pro" | "nano_banana" | "gemini_3_pro"
 
 export type PhotoClassification = "indoor" | "outdoor" | "unknown"
 
@@ -140,12 +140,8 @@ export interface PreviewVariation {
   error?: string
 }
 
-export const TOKEN_COSTS = {
-  upload: 1,
-  transform: 1,
-  save_variation: 1,
-  download_hires: 4,
-} as const
+// Legacy alias. lib/plans.ts is the single source of truth for credit prices.
+export { CREDIT_COSTS as TOKEN_COSTS } from "@/lib/plans"
 
 // Projects for organizing photos by property
 export interface Project {

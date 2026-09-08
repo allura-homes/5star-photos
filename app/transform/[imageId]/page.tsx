@@ -3,10 +3,12 @@
 import { useState, useEffect, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Image from "next/image"
-import { Header } from "@/components/header"
-import { Sidebar } from "@/components/sidebar"
+import { AppShell } from "@/components/app-shell"
+import { toast } from "sonner"
 import { useAuthContext } from "@/lib/contexts/auth-context"
-import { getImageById, transformImage } from "@/lib/actions/image-actions"
+import { getImageById } from "@/lib/actions/image-actions"
+import { startTransform, finishTransform } from "@/lib/actions/transform-actions"
+import { InsufficientCreditsDialog, type CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
 import type { UserImage, ModelProvider, EnhancementPreferences } from "@/lib/types"
 import { TOKEN_COSTS, DEFAULT_ENHANCEMENT_PREFERENCES } from "@/lib/types"
 import {
@@ -32,10 +34,13 @@ import {
   Split,
   MessageSquare,
   ChevronDown,
+  Lock,
 } from "lucide-react"
+import Link from "next/link"
 import { submitFeedback } from "@/lib/actions/feedback-actions"
 import { SingleImagePreferencesModal } from "@/components/single-image-preferences-modal"
 import { DownloadSelectionModal } from "@/components/download-selection-modal"
+import { modelLabel } from "@/lib/constants/models"
 
 interface PreviewVariation {
   model: ModelProvider
@@ -43,23 +48,26 @@ interface PreviewVariation {
   preview_url: string | null
   is_loading: boolean
   error?: string
+  /** Model exists but the user's plan does not include it. */
+  locked?: boolean
 }
 
-// APPROVED, tested models per MODEL_CONFIGURATION.md (kept in sync with
-// BATCH_MODELS in /app/batch-transform/page.tsx):
-//   V1 = "openai"          -> gpt-image-1
-//   V2 = "nano_banana_pro" -> gemini-3-pro-image-preview
-// DISABLED 2026-07-13: openai_1_5 / openai_2 (gpt-image-1.5 / gpt-image-2)
-// were failing with "Failed to fetch" - those model names are not reachable.
-const MODEL_CONFIG: { model: ModelProvider; label: string }[] = [
-  { model: "openai", label: "V1" },
-  { model: "nano_banana_pro", label: "V2" },
-  // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
-  // { model: "flux_2_pro", label: "V3" },
-  // RE-ENABLED 2026-07-13 by user request: openai_2 (V4/gpt-image-2).
-  // May still fail fast with "Failed to fetch" if not reachable.
-  { model: "openai_2", label: "V4" },
-]
+// Which models run is decided server-side by startTransform() from
+// lib/constants/models.ts (ACTIVE_MODELS) and the user's plan (lib/plans.ts).
+
+/** Turn an /api/edit-image failure into a sentence a host can act on. */
+async function friendlyModelError(response: Response): Promise<string> {
+  try {
+    const data = await response.json()
+    if (typeof data?.error === "string" && !data.error.startsWith("{")) return data.error
+  } catch {
+    /* non-JSON body */
+  }
+  if (response.status === 401) return "Your session expired. Sign in again and retry."
+  if (response.status === 429) return "This model is busy right now. Try again in a minute."
+  if (response.status === 504) return "This model took too long. Try again."
+  return "This model couldn't finish. The other variations aren't affected."
+}
 
 export default function TransformPage() {
   const params = useParams()
@@ -100,6 +108,9 @@ export default function TransformPage() {
   const [currentPrompt, setCurrentPrompt] = useState<string | null>(null)
   const [isPromptExpanded, setIsPromptExpanded] = useState(false)
 
+  // Billing
+  const [shortfall, setShortfall] = useState<CreditShortfall | null>(null)
+
   const loadImage = useCallback(async () => {
     setIsLoading(true)
     const { image: fetchedImage, error: fetchError } = await getImageById(imageId)
@@ -135,26 +146,57 @@ export default function TransformPage() {
 
     // Use passed preferences or fall back to state
     const activePreferences = customPreferences || preferences
-    
+
+    if (!image.storage_path) {
+      console.error("[v0] No storage_path found for image")
+      toast.error("This photo has no file attached. Upload it again.")
+      return
+    }
+
     setIsTransforming(true)
+
+    // BILLING: one charge covers every model in this run. The server decides
+    // which models the plan includes; locked ones render as upgrade cards.
+    const start = await startTransform(image.id)
+    if (!start.ok) {
+      setIsTransforming(false)
+      if (start.code === "INSUFFICIENT_CREDITS" || start.code === "PAST_DUE") {
+        setShortfall({
+          required: start.required ?? TOKEN_COSTS.transform,
+          available: start.available ?? 0,
+          plan: start.plan ?? "free",
+          pastDue: start.code === "PAST_DUE",
+        })
+      } else {
+        toast.error(start.error ?? "Could not start the transform.")
+      }
+      return
+    }
+
+    const transformId = start.transformId
+    const runModels = start.models
+    const lockedModels = start.lockedModels ?? []
+    refreshProfile()
+
     setHasTransformed(true)
     setCurrentPrompt(null) // Clear prompt when starting new transformation
     setIsPromptExpanded(false)
 
-    setPreviews(
-      MODEL_CONFIG.map(({ model, label }) => ({
+    setPreviews([
+      ...runModels.map(({ model, label }) => ({
         model,
         modelLabel: label,
         preview_url: null,
         is_loading: true,
       })),
-    )
-
-    if (!image.storage_path) {
-      console.error("[v0] No storage_path found for image")
-      setIsTransforming(false)
-      return
-    }
+      ...lockedModels.map(({ model, label }) => ({
+        model,
+        modelLabel: label,
+        preview_url: null,
+        is_loading: false,
+        locked: true,
+      })),
+    ])
 
     // Log the preferences being used for debugging
     console.log("[v0] Running transformation with preferences:", JSON.stringify(activePreferences))
@@ -187,13 +229,14 @@ export default function TransformPage() {
       imagePrompt = `Enhance this ${image.classification || "real estate"} photo with professional quality: improve lighting, enhance colors, increase sharpness, and make the image more vibrant while keeping the exact same scene and composition.`
     }
 
-    const modelPromises = MODEL_CONFIG.map(async ({ model, label }, index) => {
+    const modelPromises = runModels.map(async ({ model, label }, index) => {
       try {
         console.log(`[v0] Starting ${label} (${model}) - variation ${index + 1}`)
         const response = await fetch("/api/edit-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            transform_id: transformId,
             original_url: image.storage_path,
             filename: image.original_filename,
             model,
@@ -209,19 +252,14 @@ export default function TransformPage() {
 
         // Check for non-OK responses before parsing JSON
         if (!response.ok) {
-          const errorText = await response.text()
-          console.error(`[v0] ${label} HTTP error ${response.status}:`, errorText.substring(0, 100))
-          return {
-            index,
-            preview_url: null,
-            error: `HTTP ${response.status}: ${errorText.substring(0, 50)}`,
-          }
+          console.error(`[v0] ${label} HTTP error ${response.status}`)
+          return { index, preview_url: null, error: await friendlyModelError(response) }
         }
 
         const result = await response.json()
-        
+
         if (result.error) {
-          console.error(`[v0] ${label} error:`, result.error, result.details)
+          console.error(`[v0] ${label} error:`, result.error)
         } else {
           console.log(`[v0] ${label} succeeded`)
         }
@@ -229,14 +267,14 @@ export default function TransformPage() {
         return {
           index,
           preview_url: result.url || null,
-          error: result.error ? `${result.error}: ${result.details || ''}` : undefined,
+          error: result.error ? String(result.error) : undefined,
         }
       } catch (err) {
         console.error(`[v0] ${label} fetch error:`, err)
         return {
           index,
           preview_url: null,
-          error: `Failed to generate: ${err instanceof Error ? err.message : String(err)}`,
+          error: "We couldn't reach this model. Check your connection and try again.",
         }
       }
     })
@@ -246,6 +284,7 @@ export default function TransformPage() {
 
     setPreviews((prev) =>
       prev.map((p, idx) => {
+        if (p.locked) return p
         const result = results.find((r) => r.index === idx)
         return result
           ? {
@@ -259,8 +298,23 @@ export default function TransformPage() {
     )
 
     setIsTransforming(false)
-    refreshProfile() // Refresh token count
-    
+
+    const okCount = results.filter((r) => r.preview_url && !r.error).length
+    if (okCount === results.length) {
+      toast.success("All variations are ready. Compare them and save your favourite.")
+    } else if (okCount > 0) {
+      toast.warning(`${okCount} of ${results.length} variations finished. Press Transform again to retry the rest.`)
+    } else {
+      // Nothing came back: the server verifies success_count === 0 and refunds.
+      const { refunded } = await finishTransform(transformId)
+      toast.error(
+        refunded
+          ? "None of the models could finish this photo. Your credits were refunded."
+          : "None of the models could finish this photo. Try again in a minute.",
+      )
+    }
+    refreshProfile() // Refresh credit balance
+
     // Auto-save successful transformations to the database
     // This ensures users can return to their transformations later
     const successfulResults = results.filter(r => r.preview_url && !r.error)
@@ -269,9 +323,10 @@ export default function TransformPage() {
     if (successfulResults.length > 0) {
       console.log("[v0] Starting auto-save for", successfulResults.length, "transformations")
       
-      // Save each successful transformation in the background
+      // Save each successful transformation in the background. Included in
+      // the transform price, so autoSave tells the API not to charge again.
       for (const result of successfulResults) {
-        const modelConfig = MODEL_CONFIG[result.index]
+        const modelConfig = runModels[result.index]
         console.log(`[v0] Auto-saving ${modelConfig.label}...`)
         try {
           const saveBody = {
@@ -279,14 +334,8 @@ export default function TransformPage() {
             imageData: result.preview_url,
             sourceModel: modelConfig.model,
             transformationPrompt: imagePrompt,
-            userId: profile?.id, // May be undefined, API will try to get from parent image
+            autoSave: true,
           }
-          console.log(`[v0] Save body for ${modelConfig.label}:`, {
-            parentImageId: saveBody.parentImageId,
-            sourceModel: saveBody.sourceModel,
-            userId: saveBody.userId,
-            imageDataLength: saveBody.imageData?.length || 0,
-          })
           
           const saveResponse = await fetch("/api/save-variation", {
             method: "POST",
@@ -328,15 +377,22 @@ export default function TransformPage() {
           imageData: preview.preview_url,
           sourceModel: preview.model,
           transformationPrompt: null,
-          userId: profile?.id,
         }),
       })
 
       const result = await response.json()
 
-      if (!response.ok || result.error) {
-        alert(result.error || "Failed to save variation")
+      if (response.status === 402) {
+        setShortfall({
+          required: result.required ?? TOKEN_COSTS.save_variation,
+          available: result.available ?? 0,
+          plan: result.plan ?? "free",
+          pastDue: result.code === "PAST_DUE",
+        })
+      } else if (!response.ok || result.error) {
+        toast.error(typeof result.error === "string" ? result.error : "We couldn't save this variation. Please try again.")
       } else {
+        toast.success(`${preview.modelLabel} saved to your library.`)
         setSaveSuccess(preview.modelLabel)
         refreshProfile()
         // Reload image to show new variation
@@ -344,7 +400,7 @@ export default function TransformPage() {
       }
     } catch (err) {
       console.error("[v0] Save variation error:", err)
-      alert("Failed to save variation")
+      toast.error("We couldn't save this variation. Please try again.")
     }
 
     setIsSaving(false)
@@ -419,13 +475,8 @@ export default function TransformPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <div className="flex flex-1 pt-20">
-        <Sidebar />
-
-        <main className="flex-1 ml-20 p-8">
+    <AppShell>
+      <>
           <div className="max-w-6xl mx-auto">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
@@ -459,12 +510,15 @@ export default function TransformPage() {
                 </div>
               </div>
 
-              {/* Token balance */}
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10">
+              {/* Credit balance */}
+              <Link
+                href="/account#credits"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+              >
                 <Coins className="w-4 h-4 text-amber-400" />
                 <span className="text-white font-medium">{profile?.tokens || 0}</span>
-                <span className="text-slate-400 text-sm">tokens</span>
-              </div>
+                <span className="text-slate-400 text-sm">credits</span>
+              </Link>
             </div>
 
             {/* Main content */}
@@ -527,7 +581,8 @@ export default function TransformPage() {
                             className="flex items-center gap-2 px-6 py-3 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all glow-magenta"
                         >
                           <Sparkles className="w-4 h-4" />
-                          Transform (Free)
+                          Transform
+                          <span className="text-white/70 text-sm">{TOKEN_COSTS.transform} credits</span>
                         </button>
                         <button
                           onClick={() => setShowPreferences(true)}
@@ -538,6 +593,24 @@ export default function TransformPage() {
                           Custom Options
                         </button>
                       </div>
+                    </div>
+                  ) : selectedPreview?.locked ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
+                      <div className="flex size-14 items-center justify-center rounded-full bg-white/10">
+                        <Lock className="size-6 text-slate-300" aria-hidden="true" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <p className="font-semibold text-white">{selectedPreview.modelLabel} is a Pro model</p>
+                        <p className="text-sm text-slate-400 text-pretty max-w-xs">
+                          Pro and Max plans run every model on each transform so you can pick the best result.
+                        </p>
+                      </div>
+                      <Link
+                        href="/pricing?highlight=pro"
+                        className="rounded-xl gradient-magenta-violet px-5 py-2.5 text-sm font-semibold text-white glow-magenta"
+                      >
+                        See Pro plans
+                      </Link>
                     </div>
                   ) : selectedPreview?.is_loading ? (
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -643,7 +716,7 @@ export default function TransformPage() {
                     >
                       <RefreshCw className={`w-4 h-4 ${isTransforming ? "animate-spin" : ""}`} />
                       Re-transform
-                      <span className="text-green-400 text-sm">(Free)</span>
+                      <span className="text-slate-400 text-sm">{TOKEN_COSTS.transform} cr</span>
                     </button>
 
                     {/* Save variation */}
@@ -653,20 +726,20 @@ export default function TransformPage() {
                       className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#6A1FBF]/20 text-[#FF3EDB] hover:bg-[#6A1FBF]/30 transition-colors disabled:opacity-50"
                     >
                       {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bookmark className="w-4 h-4" />}
-                      Save Variation
-                      <span className="text-green-400 text-sm">(Free)</span>
+                      Save as Working Image
+                      <span className="text-[#FF3EDB]/70 text-sm">{TOKEN_COSTS.save_variation} cr</span>
                     </button>
 
-  {/* Download hi-res */}
-  <button 
-    onClick={() => setShowDownloadModal(true)}
-    disabled={previews.length === 0}
-    className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100"
-  >
-    <Download className="w-4 h-4" />
-    Download Hi-Res
-    <span className="text-green-400 text-sm">(Free)</span>
-  </button>
+                    {/* Download hi-res */}
+                    <button
+                      onClick={() => setShowDownloadModal(true)}
+                      disabled={previews.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Hi-Res
+                      <span className="text-white/70 text-sm">{TOKEN_COSTS.download_hires} cr</span>
+                    </button>
                   </div>
                 </div>
 
@@ -752,7 +825,7 @@ export default function TransformPage() {
                           // Load this variation into the preview
                           setPreviews([{
                             model: (variation.source_model as ModelProvider) || "openai",
-                            modelLabel: MODEL_CONFIG.find(m => m.model === variation.source_model)?.label || variation.source_model || "Saved",
+                            modelLabel: variation.source_model ? modelLabel(variation.source_model) : "Saved",
                             preview_url: variation.storage_path,
                             is_loading: false,
                           }])
@@ -774,7 +847,7 @@ export default function TransformPage() {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         {variation.source_model && (
                           <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-xs backdrop-blur-sm">
-                            {MODEL_CONFIG.find(m => m.model === variation.source_model)?.label || variation.source_model}
+                            {modelLabel(variation.source_model)}
                           </div>
                         )}
                         <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -819,10 +892,7 @@ export default function TransformPage() {
               )}
             </div>
           </div>
-        </main>
-      </div>
-      
-      {/* Full-screen comparison modal */}
+        {/* Full-screen comparison modal */}
       {isComparing && (selectedPreview?.preview_url || compareVariations.length > 0) && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/80 backdrop-blur-xl animate-in fade-in duration-200"
@@ -886,11 +956,11 @@ export default function TransformPage() {
                   {compareVariations.slice(0, 3).map((variation) => (
                     <div key={variation.id} className="relative rounded-xl overflow-hidden border border-white/10 shadow-2xl ring-2 ring-[#FF3EDB]/50">
                       <div className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-lg bg-[#FF3EDB] text-white text-xs font-bold shadow-lg">
-                        {MODEL_CONFIG.find(m => m.model === variation.source_model)?.label || variation.source_model}
+                        {modelLabel(variation.source_model)}
                       </div>
                       <Image
                         src={variation.storage_path || "/placeholder.svg"}
-                        alt={MODEL_CONFIG.find(m => m.model === variation.source_model)?.label || "Variation"}
+                        alt={variation.source_model ? modelLabel(variation.source_model) : "Variation"}
                         fill
                         className="object-contain bg-black/50"
                         priority
@@ -970,13 +1040,16 @@ export default function TransformPage() {
           isOpen={showDownloadModal}
           onClose={() => setShowDownloadModal(false)}
           originalFilename={image.original_filename}
+          imageId={image.id}
+          onShortfall={setShortfall}
+          onCreditsSpent={refreshProfile}
           preSelectedId={selectedPreview ? `preview-${selectedPreviewIndex}` : undefined}
           variations={[
             // Current previews (unsaved)
             ...previews
               .filter(p => p.preview_url)
               .map((p, i) => {
-                const modelConfig = MODEL_CONFIG.find(m => m.model === p.model)
+                const modelConfig = { label: modelLabel(p.model) }
                 return {
                   id: `preview-${i}`,
                   preview_url: p.preview_url!,
@@ -988,7 +1061,7 @@ export default function TransformPage() {
             ...(image.variations || [])
               .filter(v => v.storage_path)
               .map(v => {
-                const modelConfig = MODEL_CONFIG.find(m => m.model === v.source_model)
+                const modelConfig = { label: modelLabel(v.source_model) }
                 return {
                   id: v.id,
                   preview_url: v.storage_path,
@@ -999,6 +1072,8 @@ export default function TransformPage() {
           ]}
         />
       )}
-    </div>
+      </>
+      <InsufficientCreditsDialog shortfall={shortfall} onClose={() => setShortfall(null)} />
+    </AppShell>
   )
 }

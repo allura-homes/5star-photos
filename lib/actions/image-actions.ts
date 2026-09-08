@@ -1,7 +1,9 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import type { UserImage, PhotoClassification, EnhancementPreferences } from "@/lib/types"
+import type { UserImage, PhotoClassification } from "@/lib/types"
+import { chargeForAction } from "@/lib/credits"
+import { CREDIT_COSTS, type PlanId } from "@/lib/plans"
 
 // Safe revalidation helper - revalidatePath doesn't work in v0 preview
 function safeRevalidate(_path: string) {
@@ -15,19 +17,19 @@ export async function getUserImages(userId?: string): Promise<{ images: UserImag
   try {
     const supabase = await createClient()
 
-    let effectiveUserId = userId
-    
-    // If no userId provided, try to get from session
+    // SECURITY: the verified session user always wins. The optional `userId`
+    // argument is only a fallback for the rare case where the server can't
+    // read auth cookies (it's still constrained by RLS on the images table).
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    const effectiveUserId = user?.id ?? userId
     if (!effectiveUserId) {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      
-      if (!session?.user) {
-        return { images: [], error: "Not authenticated" }
-      }
-      
-      effectiveUserId = session.user.id
+      return { images: [], error: "Not authenticated" }
+    }
+    if (userId && user && userId !== user.id) {
+      console.warn("[v0] getUserImages: client userId did not match session; using session user")
     }
 
     // Fetch all user images
@@ -111,54 +113,7 @@ export async function getImageById(imageId: string): Promise<{ image: UserImage 
   }
 }
 
-// Transform a single image - generates preview variations
-export async function transformImage(
-  imageId: string,
-  preferences: EnhancementPreferences,
-): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session?.user) {
-    return { success: false, error: "Not authenticated" }
-  }
-  const user = session.user
-
-  // Get the image
-  const { data: image } = await supabase.from("images").select("*").eq("id", imageId).eq("user_id", user.id).single()
-
-  if (!image) {
-    return { success: false, error: "Image not found" }
-  }
-
-  // Check token balance (1 token for transform if not first time)
-  const { data: profile } = await supabase.from("profiles").select("tokens").eq("id", user.id).single()
-
-  // Check if this image has been transformed before
-  const { count } = await supabase
-    .from("token_transactions")
-    .select("*", { count: "exact", head: true })
-    .eq("image_id", imageId)
-    .eq("type", "revision")
-
-  const isFirstTransform = (count || 0) === 0
-
-  // TEMPORARILY DISABLED: All transforms are free for development/testing
-  // Token deduction bypassed - just log the transaction
-  await supabase.from("token_transactions").insert({
-    user_id: user.id,
-    type: "revision",
-    amount: 0, // No deduction
-    image_id: imageId,
-    description: `${isFirstTransform ? "Initial" : "Re-"}transform of ${image.original_filename} (FREE - tokens disabled)`,
-  })
-
-  // The actual transformation happens via the API route which is called client-side
-  // This function just handles the token logic
-  return { success: true }
-}
+// Transform charging lives in lib/actions/transform-actions.ts (startTransform).
 
 async function uploadToStorage(base64Data: string, storagePath: string, contentType: string): Promise<string> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -265,7 +220,14 @@ export async function uploadImage(
   fileType: string,
   classification: PhotoClassification,
   projectId?: string | null,
-): Promise<{ image: UserImage | null; error?: string }> {
+): Promise<{
+  image: UserImage | null
+  error?: string
+  code?: "INSUFFICIENT_CREDITS" | "PAST_DUE"
+  required?: number
+  available?: number
+  plan?: PlanId
+}> {
   const supabase = await createClient()
 
   const {
@@ -275,13 +237,6 @@ export async function uploadImage(
     return { image: null, error: "Not authenticated" }
   }
   const user = session.user
-
-  // TEMPORARILY DISABLED: Token balance check for development/testing
-  const { data: profile } = await supabase.from("profiles").select("tokens").eq("id", user.id).single()
-  // Token check bypassed - uncomment to re-enable:
-  // if (!profile || profile.tokens < 1) {
-  //   return { image: null, error: "Insufficient tokens" }
-  // }
 
   // Convert base64 - strip data URL prefix if present
   const base64Data = fileBase64.includes(",") ? fileBase64.split(",")[1] : fileBase64
@@ -297,22 +252,6 @@ export async function uploadImage(
     console.log("[v0] uploadImage: Uploading to path:", storagePath)
     const publicUrl = await uploadToStorage(base64Data, storagePath, fileType || "image/jpeg")
     console.log("[v0] uploadImage: Upload successful, URL:", publicUrl?.substring(0, 80) + "...")
-
-    // Deduct token after successful upload.
-    // Token enforcement is currently disabled, and the user may not have a
-    // profiles row yet (profile === null), so only deduct when a balance
-    // actually exists. This prevents the "Cannot read properties of null
-    // (reading 'tokens')" crash.
-    if (profile && typeof profile.tokens === "number") {
-      const { error: tokenError } = await supabase
-        .from("profiles")
-        .update({ tokens: profile.tokens - 1 })
-        .eq("id", user.id)
-
-      if (tokenError) {
-        return { image: null, error: "Failed to deduct token" }
-      }
-    }
 
     // Create image record
     const { data: image, error } = await supabase
@@ -333,21 +272,26 @@ export async function uploadImage(
       .single()
 
     if (error) {
-      // Refund token on failure (only if a balance was deducted above)
-      if (profile && typeof profile.tokens === "number") {
-        await supabase.from("profiles").update({ tokens: profile.tokens }).eq("id", user.id)
-      }
       return { image: null, error: error.message }
     }
 
-    // Use 'purchase' type instead of 'upload'
-    await supabase.from("token_transactions").insert({
-      user_id: user.id,
-      type: "purchase",
-      amount: -1,
-      image_id: image.id,
+    // BILLING: the record is created first so a failed charge never orphans
+    // the storage object; a rejected charge removes the record again.
+    const charge = await chargeForAction(user.id, "upload", {
       description: `Uploaded ${fileName}`,
+      imageId: image.id,
     })
+    if (!charge.ok) {
+      await supabase.from("images").delete().eq("id", image.id).eq("user_id", user.id)
+      return {
+        image: null,
+        error: charge.code === "past_due" ? "Your last payment failed." : "You're out of credits.",
+        code: charge.code === "past_due" ? "PAST_DUE" : "INSUFFICIENT_CREDITS",
+        required: CREDIT_COSTS.upload,
+        available: charge.total,
+        plan: charge.plan,
+      }
+    }
 
     safeRevalidate("/library")
     return { image: image as UserImage }
@@ -389,10 +333,6 @@ export async function saveVariation(
   if (!parentImage) {
     return { image: null, error: "Parent image not found" }
   }
-
-  // TEMPORARILY DISABLED: Token balance check for development/testing
-  // Save variation is free for now
-  const { data: profile } = await supabase.from("profiles").select("tokens").eq("id", user.id).single()
 
   let finalStoragePath = imageData
 
@@ -473,13 +413,14 @@ export async function saveVariation(
     return { image: null, error: error.message }
   }
 
-  await supabase.from("token_transactions").insert({
-    user_id: user.id,
-    type: "purchase",
-    amount: 0, // Free in development mode
-    image_id: image.id,
-    description: `Saved variation of ${parentImage.original_filename} (FREE - tokens disabled)`,
+  const charge = await chargeForAction(user.id, "save_variation", {
+    description: `Saved working image from ${parentImage.original_filename}`,
+    imageId: image.id,
   })
+  if (!charge.ok) {
+    await supabase.from("images").delete().eq("id", image.id).eq("user_id", user.id)
+    return { image: null, error: "You're out of credits." }
+  }
 
   safeRevalidate("/library")
   return { image: image as UserImage }
@@ -560,40 +501,4 @@ export async function deleteImages(imageIds: string[]): Promise<{ success: boole
   return { success: true, deletedCount: count || 0 }
 }
 
-// Record a download transaction (4 tokens)
-export async function recordDownload(
-  imageId: string,
-): Promise<{ success: boolean; downloadUrl?: string; error?: string }> {
-  const supabase = await createClient()
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session?.user) {
-    return { success: false, error: "Not authenticated" }
-  }
-  const user = session.user
-
-  // Get image info
-  const { data: image } = await supabase.from("images").select("*").eq("id", imageId).eq("user_id", user.id).single()
-
-  if (!image) {
-    return { success: false, error: "Image not found" }
-  }
-
-  // TEMPORARILY DISABLED: Token balance check for development/testing
-  // Download is free for now - just log the transaction
-  await supabase.from("token_transactions").insert({
-    user_id: user.id,
-    type: "upscale",
-    amount: 0, // No deduction
-    image_id: imageId,
-    description: `Downloaded hi-res ${image.original_filename} (FREE - tokens disabled)`,
-  })
-
-  // Generate signed URL for download
-  const { data: signedUrl } = await supabase.storage.from("original-uploads").createSignedUrl(image.storage_path, 3600) // 1 hour expiry
-
-  safeRevalidate("/library")
-  return { success: true, downloadUrl: signedUrl?.signedUrl }
-}
+// Hi-res download charging lives in app/api/upscale/route.ts.

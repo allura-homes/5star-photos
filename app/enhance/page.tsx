@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useCallback, useEffect } from "react"
+import { toast } from "sonner"
 import { useRouter } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
 import { UploadCard } from "@/components/upload-card"
 import { TaskTiles } from "@/components/task-tiles"
 import { AuthModal } from "@/components/auth-modal"
@@ -50,7 +50,7 @@ export default function EnhancePage() {
 
         if (jobResult.error || !jobResult.jobId) {
           console.error("Job creation failed:", jobResult.error)
-          alert(`Error: ${jobResult.error}`)
+          toast.error(jobResult.error || "We couldn't start this job. Please try again.")
           setIsProcessing(false)
           setProcessingStage("idle")
           return
@@ -68,7 +68,7 @@ export default function EnhancePage() {
         }
 
         if (uploadedFiles.length === 0 && files.length > 0) {
-          alert("Failed to upload files. Please try again.")
+          toast.error("We couldn't upload your photos. Please try again.")
           setIsProcessing(false)
           setProcessingStage("idle")
           return
@@ -79,7 +79,7 @@ export default function EnhancePage() {
         const finalizeResult = await processEnhancement(jobId, uploadedFiles)
 
         if (finalizeResult.error) {
-          alert(`Error: ${finalizeResult.error}`)
+          toast.error(finalizeResult.error || "Enhancement failed. Please try again.")
           setIsProcessing(false)
           setProcessingStage("idle")
           return
@@ -88,7 +88,7 @@ export default function EnhancePage() {
         router.push(`/preview/${jobId}`)
       } catch (error) {
         console.error("Enhancement error:", error)
-        alert("An error occurred during enhancement. Please try again.")
+        toast.error("Something went wrong during enhancement. Please try again.")
         setIsProcessing(false)
         setProcessingStage("idle")
       }
@@ -108,7 +108,7 @@ export default function EnhancePage() {
 
   const handleEnhance = useCallback(async () => {
     if (files.length === 0) {
-      alert("Please select at least one photo to enhance.")
+      toast.warning("Add at least one photo first.")
       return
     }
 
@@ -148,22 +148,15 @@ export default function EnhancePage() {
     }
   }, [authLoading])
 
+  // Signed-in users are redirected to /library by middleware (lib/supabase/proxy.ts).
+  // This page is the guest landing: try the uploader, then sign up to continue.
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       router.replace("/library")
     }
   }, [isAuthenticated, authLoading, router])
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-fuchsia-400 animate-spin" />
-      </div>
-    )
-  }
-
-  if (isAuthenticated) {
-    router.replace("/library")
+  if (authLoading || isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-fuchsia-400 animate-spin" />
@@ -173,12 +166,10 @@ export default function EnhancePage() {
 
   return (
     <div className="min-h-screen flex">
-      <Sidebar />
-
       <div className="flex-1 flex flex-col min-h-screen">
         <Header />
 
-        <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 flex flex-col items-center justify-center p-4 pt-24 sm:p-6 sm:pt-24 lg:p-8 lg:pt-28">
           <div className="w-full max-w-4xl space-y-8">
             <div className="text-center space-y-4">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-fuchsia-500/10 to-violet-500/10 border border-fuchsia-500/20">
@@ -209,7 +200,7 @@ export default function EnhancePage() {
               processingStage={processingStage}
             />
 
-            <TaskTiles />
+            <TaskTiles stage={processingStage} />
           </div>
         </main>
       </div>

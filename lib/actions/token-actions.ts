@@ -1,7 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { TOKEN_COSTS } from "@/lib/constants/tokens"
+import { TOKEN_COSTS, TOKENS_ENFORCED } from "@/lib/constants/tokens"
 
 /**
  * Token System Actions
@@ -43,6 +43,28 @@ async function getUserProfile(userId: string) {
 }
 
 /**
+ * Free-beta short circuit. When enforcement is off we still log a 0-amount
+ * transaction (so history is complete) but never touch the balance.
+ */
+async function logFreeTransaction(
+  userId: string,
+  type: TransactionType,
+  description: string,
+  refs: { imageId?: string; jobId?: string; fileName?: string },
+) {
+  const supabase = await createClient()
+  await supabase.from("token_transactions").insert({
+    user_id: userId,
+    type,
+    amount: 0,
+    description: `${description} (free beta)`,
+    image_id: refs.imageId ?? null,
+    job_id: refs.jobId ?? null,
+    file_name: refs.fileName ?? null,
+  })
+}
+
+/**
  * Check if user has enough tokens for an action
  */
 export async function checkTokenBalance(requiredTokens: number) {
@@ -57,7 +79,7 @@ export async function checkTokenBalance(requiredTokens: number) {
   }
 
   return {
-    hasBalance: profile.tokens >= requiredTokens,
+    hasBalance: TOKENS_ENFORCED ? profile.tokens >= requiredTokens : true,
     balance: profile.tokens,
     error: null,
   }
@@ -77,6 +99,11 @@ export async function deductTokensForUpload(imageId: string, fileName: string) {
   const profile = await getUserProfile(user.id)
   if (!profile) {
     return { success: false, error: "Profile not found" }
+  }
+
+  if (!TOKENS_ENFORCED) {
+    await logFreeTransaction(user.id, "upload" as TransactionType, `Uploaded ${fileName}`, { imageId, fileName })
+    return { success: true, newBalance: profile.tokens }
   }
 
   const cost = TOKEN_COSTS.upload
@@ -123,6 +150,11 @@ export async function deductTokensForTransform(imageId: string, fileName: string
   const profile = await getUserProfile(user.id)
   if (!profile) {
     return { success: false, error: "Profile not found" }
+  }
+
+  if (!TOKENS_ENFORCED) {
+    await logFreeTransaction(user.id, "transform" as TransactionType, `${isFirstTransform ? "Initial" : "Re-"}transform of ${fileName}`, { imageId, fileName })
+    return { success: true, newBalance: profile.tokens }
   }
 
   // First transform is free
@@ -181,6 +213,11 @@ export async function deductTokensForSaveVariation(imageId: string, fileName: st
     return { success: false, error: "Profile not found" }
   }
 
+  if (!TOKENS_ENFORCED) {
+    await logFreeTransaction(user.id, "save_variation" as TransactionType, `Saved ${sourceModel} variation of ${fileName}`, { imageId, fileName })
+    return { success: true, newBalance: profile.tokens }
+  }
+
   const cost = TOKEN_COSTS.save_variation
   if (profile.tokens < cost) {
     return { success: false, error: `Insufficient tokens. You need ${cost} token to save variation.` }
@@ -223,6 +260,11 @@ export async function deductTokensForDownload(imageId: string, fileName: string)
     return { success: false, error: "Profile not found" }
   }
 
+  if (!TOKENS_ENFORCED) {
+    await logFreeTransaction(user.id, "download_hires" as TransactionType, `Downloaded hi-res ${fileName}`, { imageId, fileName })
+    return { success: true, newBalance: profile.tokens }
+  }
+
   const cost = TOKEN_COSTS.download_hires
   if (profile.tokens < cost) {
     return { success: false, error: `Insufficient tokens. You need ${cost} tokens to download hi-res.` }
@@ -263,6 +305,11 @@ export async function deductTokensForRevision(jobId: string, fileName: string) {
   const profile = await getUserProfile(user.id)
   if (!profile) {
     return { success: false, error: "Profile not found" }
+  }
+
+  if (!TOKENS_ENFORCED) {
+    await logFreeTransaction(user.id, "revision" as TransactionType, `Revision of ${fileName}`, { jobId, fileName })
+    return { success: true, newBalance: profile.tokens }
   }
 
   if (profile.role === "viewer") {
@@ -313,6 +360,11 @@ export async function deductTokensForUpscale(jobId: string, fileName: string) {
   const profile = await getUserProfile(user.id)
   if (!profile) {
     return { success: false, error: "Profile not found" }
+  }
+
+  if (!TOKENS_ENFORCED) {
+    await logFreeTransaction(user.id, "upscale" as TransactionType, `Upscaled ${fileName}`, { jobId, fileName })
+    return { success: true, newBalance: profile.tokens }
   }
 
   if (profile.role === "viewer") {

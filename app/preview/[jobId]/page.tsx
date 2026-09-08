@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { useParams, useRouter } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
+import { AppShell } from "@/components/app-shell"
 import { PreviewGrid } from "@/components/preview-grid"
 import { PreviewModal } from "@/components/preview-modal"
 import type { Job, FileItem, Variation } from "@/lib/types"
@@ -100,7 +101,7 @@ export default function PreviewPage() {
     }, 0)
 
     if (approvedCount === 0) {
-      alert("Please approve at least one photo variation")
+      toast.warning("Approve at least one variation to continue.")
       return
     }
 
@@ -110,7 +111,7 @@ export default function PreviewPage() {
     if (result.success) {
       router.push(`/download/${job.id}`)
     } else {
-      alert("Failed to generate final images")
+      toast.error("We couldn't generate the final images. Please try again.")
       setIsGenerating(false)
     }
   }
@@ -199,10 +200,7 @@ export default function PreviewPage() {
   }, 0)
 
   return (
-    <div className="min-h-screen flex">
-      <Sidebar />
-
-      <main className="flex-1 ml-20 p-8 pb-32 overflow-y-auto">
+    <AppShell>
         <div className="max-w-6xl mx-auto">
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-white mb-3">Preview Results</h1>
@@ -245,7 +243,6 @@ export default function PreviewPage() {
             </div>
           )}
         </div>
-      </main>
 
       {job.file_list.length > 0 && totalVariations > 0 && (
         <div className="fixed bottom-0 left-20 right-0 glass-card-strong border-t border-white/20 p-6">
@@ -283,6 +280,6 @@ export default function PreviewPage() {
           styleMode={job.style_mode}
         />
       )}
-    </div>
+    </AppShell>
   )
 }

@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireUser } from "@/lib/api-auth"
+import { chargeForAction, refundCredits } from "@/lib/credits"
+import { CREDIT_COSTS } from "@/lib/plans"
 
 export const maxDuration = 60
 
@@ -76,53 +79,43 @@ async function supabaseRest(endpoint: string, options: { method?: string; body?:
   return text ? JSON.parse(text) : null
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function POST(request: NextRequest) {
-  console.log("[v0] Save variation API started (REST version)")
+  console.log("[v0] Save variation API started")
   try {
-    // Parse body first
+    // SECURITY: the user is always the authenticated session user. The
+    // request body is never trusted for identity.
+    const auth = await requireUser(request)
+    if (!auth.ok) return auth.response
+    const userId = auth.user.id
+
     let body
     try {
       body = await request.json()
-      console.log("[v0] Body parsed, userId:", body?.userId, "parentImageId:", body?.parentImageId)
     } catch (parseErr) {
       console.error("[v0] Save variation JSON parse error:", parseErr)
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
     }
-    
-    let { parentImageId, imageData, sourceModel, transformationPrompt, userId } = body
 
-    // If no userId provided, try to get from parent image owner
-    if (!userId && parentImageId) {
-      console.log("[v0] No userId provided, attempting to get from parent image")
-      try {
-        const parentImages = await supabaseRest(`images?id=eq.${parentImageId}&select=user_id`)
-        if (parentImages && parentImages.length > 0) {
-          userId = parentImages[0].user_id
-          console.log("[v0] Got userId from parent image:", userId)
-        }
-      } catch (e) {
-        console.log("[v0] Could not get userId from parent image:", e)
-      }
-    }
-
-    if (!userId) {
-      console.log("[v0] No userId provided and could not determine from parent")
-      return NextResponse.json({ error: "User ID required" }, { status: 401 })
-    }
+    const { parentImageId, imageData, sourceModel, transformationPrompt, autoSave } = body ?? {}
 
     if (!parentImageId || !imageData) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Verify user exists
-    console.log("[v0] Verifying user...")
-    const profiles = await supabaseRest(`profiles?id=eq.${userId}&select=id`)
-    if (!profiles || profiles.length === 0) {
-      return NextResponse.json({ error: "Invalid user" }, { status: 401 })
+    // BILLING: results are stored automatically after a transform as part of
+    // that transform's price. Explicitly saving a result as a new working
+    // image (so it can be re-transformed) is its own 1-credit action.
+    const isBillable = autoSave !== true
+    if (typeof parentImageId !== "string" || !UUID_RE.test(parentImageId)) {
+      return NextResponse.json({ error: "Invalid parent image id" }, { status: 400 })
     }
-    console.log("[v0] User verified")
+    if (typeof imageData !== "string" || imageData.length > 30 * 1024 * 1024) {
+      return NextResponse.json({ error: "Image payload invalid or too large" }, { status: 400 })
+    }
 
-    // Get parent image info
+    // Ownership check: the parent image must belong to the caller.
     console.log("[v0] Fetching parent image...")
     const parentImages = await supabaseRest(`images?id=eq.${parentImageId}&user_id=eq.${userId}&select=*`)
     if (!parentImages || parentImages.length === 0) {
@@ -130,6 +123,25 @@ export async function POST(request: NextRequest) {
     }
     const parentImage = parentImages[0]
     console.log("[v0] Parent image found:", parentImage.original_filename)
+
+    if (isBillable) {
+      const charge = await chargeForAction(userId, "save_variation", {
+        description: `Saved working image from ${parentImage.original_filename}`,
+        imageId: parentImageId,
+      })
+      if (!charge.ok) {
+        return NextResponse.json(
+          {
+            error: charge.code === "past_due" ? "Your last payment failed." : "You're out of credits.",
+            code: charge.code === "past_due" ? "PAST_DUE" : "INSUFFICIENT_CREDITS",
+            required: CREDIT_COSTS.save_variation,
+            available: charge.total,
+            plan: charge.plan,
+          },
+          { status: 402 },
+        )
+      }
+    }
 
     let finalStoragePath = imageData
 
@@ -163,7 +175,13 @@ export async function POST(request: NextRequest) {
         // Capture specific error during upload
         const errMsg = uploadError instanceof Error ? uploadError.message : String(uploadError)
         console.error("[v0] Upload exception:", errMsg)
-        return NextResponse.json({ error: `Upload failed: ${errMsg}` }, { status: 500 })
+        if (isBillable) {
+          await refundCredits(userId, CREDIT_COSTS.save_variation, {
+            description: "Refund: save failed",
+            imageId: parentImageId,
+          })
+        }
+        return NextResponse.json({ error: "We couldn't save this image. Please try again.", code: "UPLOAD_FAILED" }, { status: 500 })
       }
     }
 
@@ -188,22 +206,16 @@ export async function POST(request: NextRequest) {
     })
 
     if (!insertedImages || insertedImages.length === 0) {
+      if (isBillable) {
+        await refundCredits(userId, CREDIT_COSTS.save_variation, {
+          description: "Refund: save failed",
+          imageId: parentImageId,
+        })
+      }
       return NextResponse.json({ error: "Failed to save variation record" }, { status: 500 })
     }
     const image = insertedImages[0]
     console.log("[v0] Variation record created:", image.id)
-
-    // Log transaction (free in development mode)
-    await supabaseRest("token_transactions", {
-      method: "POST",
-      body: {
-        user_id: userId,
-        type: "purchase",
-        amount: 0,
-        image_id: image.id,
-        description: `Saved variation of ${parentImage.original_filename} (FREE)`,
-      },
-    })
 
     console.log("[v0] Save variation complete!")
     return NextResponse.json({ success: true, image })
@@ -215,6 +227,6 @@ export async function POST(request: NextRequest) {
       errorMessage = error
     }
     console.error("[v0] Save variation error:", errorMessage)
-    return NextResponse.json({ error: errorMessage }, { status: 500 })
+    return NextResponse.json({ error: "We couldn't save this variation. Please try again.", code: "SAVE_FAILED" }, { status: 500 })
   }
 }

@@ -1,4 +1,6 @@
 import { z } from "zod"
+import type { NextRequest } from "next/server"
+import { requireUser } from "@/lib/api-auth"
 
 const qaCuratorSchema = z.object({
   qa_pass: z.boolean(),
@@ -49,7 +51,11 @@ Output MUST be valid JSON with this exact shape:
 - If qa_pass is false, be very specific in retry_instructions (e.g. "cool the white balance slightly and reduce warmth by about 10%", "straighten vertical lines", "remove any added haze or bloom and increase clarity slightly").
 Do not include any commentary outside the JSON object.`
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // SECURITY: this route spends paid OpenAI credits.
+  const auth = await requireUser(req)
+  if (!auth.ok) return auth.response
+
   try {
     if (!process.env.OPENAI_API_KEY) {
       console.error("[v0] QA Curator API: Missing OPENAI_API_KEY")
@@ -148,7 +154,8 @@ Return the JSON QA object only.`
 
     return Response.json(
       {
-        error: error instanceof Error ? error.message : "Failed to generate QA evaluation",
+        error: "QA check unavailable",
+        code: "QA_UNAVAILABLE",
         qa_pass: true, // Default to pass
         issues: ["QA unavailable"],
         retry_instructions: "",

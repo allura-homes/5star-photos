@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
-import { Header } from "@/components/header"
-import { Sidebar } from "@/components/sidebar"
+import { AppShell } from "@/components/app-shell"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { getProjectById, getProjectImages, updateProject, assignImagesToProject } from "@/lib/actions/project-actions"
 import type { Project, UserImage } from "@/lib/types"
@@ -40,7 +39,7 @@ export default function ProjectDetailPage() {
   const router = useRouter()
   const params = useParams()
   const projectId = params.projectId as string
-  const { isAuthenticated, isLoading: authLoading, profile } = useAuthContext()
+  const { isAuthenticated, isLoading: authLoading, profile, refreshProfile } = useAuthContext()
 
   const [project, setProject] = useState<Project | null>(null)
   const [images, setImages] = useState<UserImage[]>([])
@@ -186,7 +185,7 @@ export default function ProjectDetailPage() {
 
   if (authLoading || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950">
+      <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[#FF3EDB] animate-spin" />
       </div>
     )
@@ -199,31 +198,19 @@ export default function ProjectDetailPage() {
 
   if (!project) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Header />
-        <div className="flex flex-1 pt-20">
-          <Sidebar />
-          <main className="flex-1 ml-20 p-8">
+      <AppShell>
             <div className="max-w-6xl mx-auto text-center py-20">
               <h1 className="text-2xl font-bold text-white mb-4">Project Not Found</h1>
               <Link href="/library" className="text-fuchsia-400 hover:text-fuchsia-300">
                 Return to Library
               </Link>
             </div>
-          </main>
-        </div>
-      </div>
+      </AppShell>
     )
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <div className="flex flex-1 pt-20">
-        <Sidebar />
-
-        <main className="flex-1 ml-20 p-8">
+    <AppShell>
           <div className="max-w-6xl mx-auto">
             {/* Back Link */}
             <Link
@@ -313,6 +300,8 @@ export default function ProjectDetailPage() {
                     onComplete={handleUploadComplete}
                     onCancel={() => setShowUploader(false)}
                     tokenBalance={profile?.tokens || 0}
+                    plan={profile?.plan ?? "free"}
+                    onCreditsSpent={refreshProfile}
                     preselectedProjectId={projectId}
                   />
                 </div>
@@ -581,8 +570,6 @@ export default function ProjectDetailPage() {
               </div>
             </div>
           )}
-        </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

@@ -100,28 +100,24 @@ export async function submitFeedback(
   }
 }
 
-export async function getFeedbackStats(): Promise<{
-  nano_banana_pro: { thumbs_up: number; thumbs_down: number }
-  openai: { thumbs_up: number; thumbs_down: number }
-  openai_mini: { thumbs_up: number; thumbs_down: number }
-  openai_1_5: { thumbs_up: number; thumbs_down: number }
-}> {
+export type FeedbackStats = Record<ModelProvider, { thumbs_up: number; thumbs_down: number }>
+
+const ALL_PROVIDERS: ModelProvider[] = ["openai", "nano_banana_pro", "openai_2", "flux_2_pro", "openai_1_5", "openai_mini"]
+
+export async function getFeedbackStats(): Promise<FeedbackStats> {
   const supabase = await createClient()
 
   const { data } = await supabase.from("model_feedback").select("model_provider, feedback_type")
 
-  const stats = {
-    nano_banana_pro: { thumbs_up: 0, thumbs_down: 0 },
-    openai: { thumbs_up: 0, thumbs_down: 0 },
-    openai_mini: { thumbs_up: 0, thumbs_down: 0 },
-    openai_1_5: { thumbs_up: 0, thumbs_down: 0 },
-  }
+  const stats = Object.fromEntries(
+    ALL_PROVIDERS.map((p) => [p, { thumbs_up: 0, thumbs_down: 0 }]),
+  ) as FeedbackStats
 
   if (data) {
     for (const row of data) {
-      const provider = row.model_provider as keyof typeof stats
+      const provider = row.model_provider as ModelProvider
       const type = row.feedback_type as "thumbs_up" | "thumbs_down"
-      if (stats[provider]) {
+      if (stats[provider] && (type === "thumbs_up" || type === "thumbs_down")) {
         stats[provider][type]++
       }
     }
