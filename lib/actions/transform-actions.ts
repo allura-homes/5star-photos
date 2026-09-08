@@ -82,7 +82,6 @@ export async function startTransform(imageId: string): Promise<StartTransformRes
     .single()
 
   if (error || !chargeRow) {
-    console.log("[v0] transform_charges insert failed:", error?.message, error?.details, error?.hint, error?.code)
     await refundCredits(user.id, CREDIT_COSTS.transform, { description: "Refund: transform could not start", imageId })
     return { ok: false, error: "Could not start the transform. Your credits were not charged.", code: "START_FAILED" }
   }

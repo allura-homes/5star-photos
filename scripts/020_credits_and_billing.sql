@@ -70,7 +70,7 @@ alter table public.stripe_events enable row level security;
 -- transform_charges: a transform is charged once per request, not per model
 -- ---------------------------------------------------------------------------
 create table if not exists public.transform_charges (
-  transform_id uuid primary key,
+  transform_id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   image_id uuid,
   amount integer not null,
