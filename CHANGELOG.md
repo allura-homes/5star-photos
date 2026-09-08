@@ -2,6 +2,35 @@
 
 All notable changes to the 5star.photos app will be documented in this file.
 
+## [Credits & Billing] - 2026-09-08
+
+### Summary
+Ends the free beta. Usage is now metered in credits, paid plans and top-up packs are sold through Stripe, and every paid action is enforced server-side through one atomic Postgres function. Full details in [docs/BILLING.md](docs/BILLING.md).
+
+### Billing
+- Credit costs: upload 1, transform 10 (all models in the plan), save variation 1, hi-res download 3. Failed transforms are refunded.
+- 45 welcome credits granted to every new account by a DB trigger.
+- Plans: Start-up $19 / Pro $49 / Max $99 per month (annual = 2 months free) with 100 / 270 / 570 monthly credits. Pro and Max unlock every model; Free and Start-up get V1 + V2.
+- Top-up packs (50 / 150 / 300 credits) for subscribers; frozen (not lost) if the subscription lapses.
+- New `/pricing`, `/checkout` (embedded Stripe Checkout), `/checkout/return` pages; Account page gains plan card, credit breakdown, upgrade / top-up / manage-billing.
+- `POST /api/stripe/webhook` syncs subscriptions and grants credits, idempotent via `stripe_events`. Daily cron resets plan credits for annual subscribers.
+- `scripts/stripe-setup.ts` idempotently creates Products/Prices keyed by lookup key; `lib/plans.ts` is the single source of truth.
+
+### Enforcement
+- `spend_credits()` Postgres function locks the profile row, checks the balance and writes the ledger in one transaction (no overdraw under concurrency).
+- Upload, edit-image, save-variation, download, upscale all charge server-side; edit-image also enforces plan model access.
+- Shared `InsufficientCreditsDialog` on every paid surface; locked model cards on the transform page.
+
+### UX
+- Header shows a credits pill and plan badge; beta banner retired.
+- Sign-up rebuilt: inline validation, confirm password, strength meter, welcome-credits value prop, Terms/Privacy links.
+- Help and Terms pages describe credits, resets, refunds and cancellation.
+- Admin users table shows plan and credits, with an "Adjust credits" dialog (audited in the ledger) and an "Open in Stripe" link.
+
+### Security
+- `?redirect=` / `?next=` are validated to same-origin paths (`lib/safe-redirect.ts`), closing a deferred item from the stable release.
+- Webhook signature verification, replay protection, server-chosen Prices.
+
 ## [Stable Release] - 2026-09-04
 
 ### Summary

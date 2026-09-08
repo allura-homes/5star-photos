@@ -29,11 +29,22 @@ Use **Batch Enhance** to process a whole set of photos in one go. Each photo run
 Group related photos (for example, all shots of one property) into a **Project** from your library so they stay organized.
 
 ## Your account
-- **Account** shows how many photos and saved variations you have, your token status, and your recent activity. You can set a display name and sign out here.
+- **Account** shows how many photos and saved variations you have, your plan and credit balance (with upgrade, top-up and manage-billing buttons), and your recent activity. You can set a display name and sign out here.
 - **Activity** shows your full history of uploads, transforms, and downloads.
 
-## Tokens & pricing
-The app is currently in **free beta** — enhance as many photos as you like while we tune the models. Your activity is still recorded so your history is accurate, but nothing is charged. We'll give clear notice before any paid plan starts. The "How tokens will work" link in the beta banner explains the future model.
+## Credits & pricing
+Everything runs on credits. A new account starts with **45 free credits** — enough for three finished photos, no card needed.
+
+| Action | Credits |
+|---|---|
+| Upload a photo | 1 |
+| Transform (every model in your plan, in one go) | 10 |
+| Save a variation as a working image | 1 |
+| Download hi-res | 3 |
+
+If a transform produces no result at all, the 10 credits are refunded automatically.
+
+**Plans** refill your credits every month and can be billed monthly or annually (two months free): Start-up ($19, 100 credits, V1 + V2 models), Pro ($49, 270 credits, every model) and Max ($99, 570 credits, every model). Subscribers can also buy **top-up packs** (50 / 150 / 300 credits) that never expire while you are subscribed. Unused monthly credits do not roll over. Change or cancel your plan anytime from **Account → Manage billing**; upgrades apply immediately, downgrades and cancellations at the end of the period. See `/pricing` in the app for current prices.
 
 ## Tips for the best results
 - Start from the sharpest, most level photo you have; AI enhancement improves lighting and color but can't recover a very blurry shot.

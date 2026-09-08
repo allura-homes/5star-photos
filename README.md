@@ -52,6 +52,10 @@ The app reads its configuration from environment variables (see below). In v0 / 
 | `GOOGLE_CLOUD_API_KEY` | Google Generative Language API (Nano Banana Pro) |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob (reference-image uploads) |
 | `NEXT_PUBLIC_SITE_URL` | Canonical site URL for auth redirects |
+| `STRIPE_SECRET_KEY` | Stripe API (checkout, portal, plan changes) |
+| `STRIPE_WEBHOOK_SECRET` | Verifies `POST /api/stripe/webhook` signatures |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Embedded Stripe Checkout in the browser |
+| `CRON_SECRET` | Authorises the daily annual-credits cron |
 
 Optional: `FAL_KEY` (deprecated fal.ai upscaling/FLUX), `NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL` (v0 preview auth redirect proxy).
 
@@ -65,6 +69,7 @@ Optional: `FAL_KEY` (deprecated fal.ai upscaling/FLUX), `NEXT_PUBLIC_DEV_SUPABAS
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Routes, data model, the enhancement pipeline, auth flow |
 | [docs/SECURITY.md](docs/SECURITY.md) | Trust model, what's hardened, and known deferred items |
+| [docs/BILLING.md](docs/BILLING.md) | Credit costs, plan tiers, Stripe webhook wiring, go-live checklist |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | End-user walkthrough (also surfaced in-app at `/help`) |
 | [MODEL_CONFIGURATION.md](MODEL_CONFIGURATION.md) | Exact AI model IDs, endpoints, and provider mapping |
 | [docs/ART_DIRECTOR_STRATEGY.md](docs/ART_DIRECTOR_STRATEGY.md) | How enhancement prompts are generated |
@@ -72,9 +77,9 @@ Optional: `FAL_KEY` (deprecated fal.ai upscaling/FLUX), `NEXT_PUBLIC_DEV_SUPABAS
 
 ---
 
-## Billing / tokens
+## Billing / credits
 
-The app has a token system (upload / transform / hi-res download cost tokens). It is currently in **free beta**: enforcement is turned off via a single flag (`TOKENS_ENFORCED` in `lib/constants/tokens.ts`) and every action is free. Usage is still recorded in `token_transactions` so history and a future paid tier work without a rewrite. Flip the flag to `true` (or set `NEXT_PUBLIC_TOKENS_ENFORCED=true`) to enable charging.
+Usage is metered in credits (upload 1, transform 10, save 1, hi-res download 3). New accounts get 45 welcome credits; paid plans (Start-up $19 / Pro $49 / Max $99 per month, annual = 2 months free) refill monthly, and subscribers can buy top-up packs. Stripe handles checkout, the customer portal and webhooks. All balance changes go through the atomic `spend_credits` Postgres function. See [docs/BILLING.md](docs/BILLING.md) for tiers, costs, webhook events, and the go-live checklist.
 
 ---
 
