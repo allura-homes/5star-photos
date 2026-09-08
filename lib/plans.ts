@@ -143,6 +143,13 @@ export function planPriceCents(plan: PaidPlanId, interval: BillingInterval): num
   return interval === "year" ? PLANS[plan].annualPriceCents : PLANS[plan].monthlyPriceCents
 }
 
+/** Credits needed to take one photo from upload to a hi-res download. */
+export const PHOTO_COST = CREDIT_COSTS.upload + CREDIT_COSTS.transform + CREDIT_COSTS.download_hires
+
+export function photosFromCredits(credits: number): number {
+  return Math.floor(credits / PHOTO_COST)
+}
+
 export function formatPrice(cents: number): string {
   return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`
 }

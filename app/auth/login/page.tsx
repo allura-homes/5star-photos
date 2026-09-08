@@ -6,6 +6,7 @@ import { useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { createClient, clearAuthState } from "@/lib/supabase/client"
+import { safeRedirectPath } from "@/lib/safe-redirect"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,7 +20,7 @@ function LoginForm() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirect = searchParams.get("redirect") || "/library"
+  const redirect = safeRedirectPath(searchParams.get("redirect"))
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -90,7 +91,7 @@ function LoginForm() {
       options: {
         redirectTo:
           process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ||
-          `${window.location.origin}/auth/callback?next=${redirect}`,
+          `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
       },
     })
 

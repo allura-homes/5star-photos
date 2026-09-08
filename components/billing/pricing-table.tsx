@@ -16,16 +16,11 @@ import {
   formatPrice,
   comparePlans,
   isPaidPlanId,
+  photosFromCredits,
   type BillingInterval,
   type PaidPlanId,
   type PlanId,
 } from "@/lib/plans"
-
-const PHOTO_COST = CREDIT_COSTS.upload + CREDIT_COSTS.transform + CREDIT_COSTS.download_hires
-
-function photosFromCredits(credits: number): number {
-  return Math.floor(credits / PHOTO_COST)
-}
 
 function perCreditCents(plan: PaidPlanId, interval: BillingInterval): number {
   const months = interval === "year" ? 12 : 1
