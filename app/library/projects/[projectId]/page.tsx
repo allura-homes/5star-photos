@@ -39,7 +39,7 @@ export default function ProjectDetailPage() {
   const router = useRouter()
   const params = useParams()
   const projectId = params.projectId as string
-  const { isAuthenticated, isLoading: authLoading, profile } = useAuthContext()
+  const { isAuthenticated, isLoading: authLoading, profile, refreshProfile } = useAuthContext()
 
   const [project, setProject] = useState<Project | null>(null)
   const [images, setImages] = useState<UserImage[]>([])
@@ -300,6 +300,8 @@ export default function ProjectDetailPage() {
                     onComplete={handleUploadComplete}
                     onCancel={() => setShowUploader(false)}
                     tokenBalance={profile?.tokens || 0}
+                    plan={profile?.plan ?? "free"}
+                    onCreditsSpent={refreshProfile}
                     preselectedProjectId={projectId}
                   />
                 </div>

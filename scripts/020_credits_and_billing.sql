@@ -217,18 +217,20 @@ returns trigger
 language plpgsql
 as $$
 begin
-  new.tokens := new.plan_credits + new.topup_credits;
+  -- Mirror the *usable* balance: top-up credits are frozen while unsubscribed.
+  new.tokens := new.plan_credits + case when new.plan = 'free' then 0 else new.topup_credits end;
   return new;
 end;
 $$;
 
 drop trigger if exists profiles_sync_tokens on public.profiles;
 create trigger profiles_sync_tokens
-  before insert or update of plan_credits, topup_credits on public.profiles
+  before insert or update of plan, plan_credits, topup_credits on public.profiles
   for each row execute function public.sync_profile_tokens();
 
-update public.profiles set tokens = plan_credits + topup_credits
-where tokens is distinct from plan_credits + topup_credits;
+update public.profiles
+set tokens = plan_credits + case when plan = 'free' then 0 else topup_credits end
+where tokens is distinct from plan_credits + case when plan = 'free' then 0 else topup_credits end;
 
 -- Transform charge bookkeeping used to verify refunds server-side.
 alter table public.transform_charges add column if not exists success_count integer not null default 0;

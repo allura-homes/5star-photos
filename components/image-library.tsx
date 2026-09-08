@@ -483,6 +483,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
 
     return (
       <div className="flex flex-col gap-8">
+        <InsufficientCreditsDialog shortfall={shortfall} onClose={() => setShortfall(null)} />
         {pendingUploads.length === 0 && (
           <FirstRunGuide onSampleAdded={loadImages} onUploadClick={() => open()} />
         )}
@@ -508,7 +509,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
             <div className="flex items-center justify-between mb-4">
               <span className="text-slate-300">{pendingUploads.length} photos selected</span>
               {hasInsufficientTokens && (
-                <span className="text-red-400 text-sm">Cost: {uploadCost} tokens (insufficient balance)</span>
+                <span className="text-red-400 text-sm">Cost: {uploadCost} credits (you have {tokenBalance})</span>
               )}
             </div>
 
@@ -620,6 +621,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
 
   return (
     <div className="space-y-4">
+      <InsufficientCreditsDialog shortfall={shortfall} onClose={() => setShortfall(null)} />
       {images.map((image) => {
         const isExpanded = expandedImages.has(image.id)
         const variationCount = image.variations?.length || 0

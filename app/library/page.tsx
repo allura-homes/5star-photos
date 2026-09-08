@@ -15,7 +15,7 @@ import { TOKENS_ENFORCED } from "@/lib/constants/tokens"
 export default function LibraryPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isAuthenticated, isLoading: authLoading, profile } = useAuthContext()
+  const { isAuthenticated, isLoading: authLoading, profile, refreshProfile } = useAuthContext()
   const [showUploader, setShowUploader] = useState(false)
   const [showAirbnbImport, setShowAirbnbImport] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -140,11 +140,13 @@ export default function LibraryPage() {
         {/* Content based on active tab */}
         {activeTab === "photos" &&
           (showUploader ? (
-            <ImageUploader
-              onComplete={handleUploadComplete}
-              onCancel={() => setShowUploader(false)}
-              tokenBalance={profile?.tokens || 0}
-            />
+              <ImageUploader
+                onComplete={handleUploadComplete}
+                onCancel={() => setShowUploader(false)}
+                tokenBalance={profile?.tokens || 0}
+                plan={profile?.plan ?? "free"}
+                onCreditsSpent={refreshProfile}
+              />
           ) : (
             <ImageLibrary
               key={refreshKey}

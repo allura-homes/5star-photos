@@ -3,6 +3,7 @@
 import { createClient, clearAuthState } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback, useRef } from "react"
 import type { User } from "@supabase/supabase-js"
+import type { PlanId, BillingInterval } from "@/lib/plans"
 
 // Helper to check if an error is a refresh token error
 function isRefreshTokenError(error: unknown): boolean {
@@ -43,7 +44,15 @@ export interface UserProfile {
   display_name: string | null
   avatar_url: string | null
   role: UserRole
+  /** Usable credit balance, mirrored by a DB trigger from plan + top-up credits. */
   tokens: number
+  plan: PlanId
+  billing_interval: BillingInterval | null
+  plan_credits: number
+  topup_credits: number
+  subscription_status: string | null
+  current_period_end: string | null
+  cancel_at_period_end: boolean | null
   free_previews_used: number
   free_previews_limit: number
   created_at: string
