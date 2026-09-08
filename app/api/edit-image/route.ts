@@ -668,7 +668,7 @@ MANDATORY FRAMING RULES (DO NOT VIOLATE):
       
       try {
         response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent?key=${apiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -966,9 +966,9 @@ The final image should look like it was shot with professional studio lighting -
  *
  * Supported Providers:
  * - nano_banana / nano_banana_pro: Nano Banana Pro (Gemini 3 Pro) - V1
- * - openai: OpenAI GPT Image 1 via Images Edits API - V2
- * - openai_mini: OpenAI GPT Image 1 Mini via Images Edits API - V3
- * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API - V4
+ * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API - V1
+ * - openai_2: OpenAI GPT Image 2 via Images Edits API - V2
+ * - nano_banana_pro: Google Gemini 3 Pro Image - V3
  *
  * See MODEL_CONFIGURATION.md for model details.
  */
@@ -1167,7 +1167,7 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
           throw err
         }
       } else if (provider === "nano_banana" || provider === "nano_banana_pro" || provider === "gemini_3_pro") {
-        console.log(`[v0] Calling Nano Banana Pro / Gemini 3 Pro (v${variation_number})`)
+        console.log(`[v0] Calling Google Gemini 3 Pro Image (v${variation_number})`)
         try {
           // Nano Banana tends to produce warm/orange lighting for indoor photos
           // Add explicit lighting guidance to counteract this tendency

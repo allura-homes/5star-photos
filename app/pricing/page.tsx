@@ -26,7 +26,7 @@ const FAQ = [
   },
   {
     q: "Which AI models do I get?",
-    a: "Every plan runs V1 and V2, our two approved models, on each transform. Pro and Max also run every additional model we have enabled, so you see more candidates side by side and pick the best one.",
+    a: "Every plan runs V1, V2 and V3, our three approved models, on each transform. Pro and Max also run every additional model we have enabled, so you see more candidates side by side and pick the best one.",
   },
   {
     q: "Is there a refund policy?",

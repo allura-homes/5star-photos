@@ -17,10 +17,10 @@ import { Buffer } from "buffer"
  * VERSION: v197 (Stable Checkpoint)
  *
  * Active Providers:
- * - V1: Nano Banana Pro (gemini-3-pro-image-preview)
- * - V2: OpenAI GPT Image 1 (Images Edits API, 1536x1024)
- * - V3: OpenAI GPT Image 1 Mini (Images Edits API, 1536x1024)
- * - V4: OpenAI GPT Image 1.5 (Images Edits API, 1536x1024)
+ * - V1: OpenAI GPT Image 1.5
+ * - V2: OpenAI GPT Image 2
+ * - V3: Google Gemini 3 Pro Image
+ * - V4: Retired Flux model (available to add back later)
  *
  * See MODEL_CONFIGURATION.md for full documentation.
  * See docs/ART_DIRECTOR_STRATEGY.md for prompt engineering guidelines.
@@ -567,7 +567,7 @@ async function processFileWithVariations(
     const providerName = providerConfig.name
     const providerId = providerConfig.id
 
-    if (providerId === "openai" && openaiUnavailable) {
+    if ((providerId === "openai_1_5" || providerId === "openai_2") && openaiUnavailable) {
       console.log(`[v0] Skipping OpenAI (v${variationNum}) - quota unavailable`)
       continue
     }
@@ -613,7 +613,7 @@ async function processFileWithVariations(
             console.log(`[v0] ${providerName} quota exceeded - skipping this provider`)
             skipVariation = true
 
-            if (providerId === "openai") {
+            if (providerId === "openai_1_5" || providerId === "openai_2") {
               openaiUnavailable = true
             }
             break
@@ -702,14 +702,13 @@ async function processFileWithVariations(
   return { variations, openaiUnavailable }
 }
 
-const MAX_VARIATIONS = 4
+const MAX_VARIATIONS = 3
 const MAX_RETRIES = 1
 
 const PROVIDERS = [
-  { id: "nano_banana", name: "Nano Banana Pro", variation: 1 },
-  { id: "openai", name: "GPT Image 1", variation: 2 },
-  { id: "openai_mini", name: "GPT Image 1 Mini", variation: 3 },
-  { id: "openai_1_5", name: "GPT Image 1.5", variation: 4 },
+  { id: "openai_1_5", name: "OpenAI GPT Image 1.5", variation: 1 },
+  { id: "openai_2", name: "OpenAI GPT Image 2", variation: 2 },
+  { id: "nano_banana", name: "Google Gemini 3 Pro Image", variation: 3 },
 ] as const
 
 async function uploadToSupabaseStorage(base64Data: string, fileName: string): Promise<string> {

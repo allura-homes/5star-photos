@@ -39,7 +39,7 @@ const TIPS = [
 const FAQ = [
   {
     q: "Which variation should I pick?",
-    a: "There is no wrong answer. V1 is the most faithful, V2 is the most dramatic, V4 has the sharpest detail. Many hosts save two and A/B test them on their listing.",
+    a: "There is no wrong answer. V1 is the more faithful OpenAI result, V2 is OpenAI's newest image model, and V3 is Google's latest. Many hosts save two and A/B test them on their listing.",
   },
   {
     q: "One of the variations says it is unavailable. Did something break?",

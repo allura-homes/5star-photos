@@ -29,8 +29,6 @@ import {
 
 // Which models run is decided server-side per image by startTransform()
 // (lib/constants/models.ts ACTIVE_MODELS filtered by the user's plan).
-// NOTE (2026-07-13): gpt-image-2 (V4) can fail with "Failed to fetch" if this
-// project's OpenAI key/org has not been granted access to it; V1/V2 still save.
 type BatchModel = { model: ModelProvider; label: string }
 
 // Timeouts for different API calls
@@ -67,8 +65,7 @@ interface BatchImage {
   status: BatchImageStatus
   progress: number // 0-100
   error?: string
-  // Per-model failure reasons (e.g. "V4: <OpenAI error>"). Surfaced so a model
-  // that fails to save (like gpt-image-2 without account access) is visible
+  // Per-model failure reasons are surfaced so a failed model is visible
   // instead of being silently dropped.
   modelErrors?: string[]
   completedVariations: number
@@ -187,7 +184,7 @@ export default function BatchTransformPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             classification,
-            room_type_guess: batchImage.image.room_type_guess || "",
+            room_type_guess: (batchImage.image as UserImage & { room_type_guess?: string }).room_type_guess || "",
             user_preferences: customPreferences,
             original_url: batchImage.image.storage_path,
             filename: batchImage.image.original_filename,
@@ -213,7 +210,7 @@ export default function BatchTransformPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             classification,
-            room_type_guess: batchImage.image.room_type_guess || "",
+            room_type_guess: (batchImage.image as UserImage & { room_type_guess?: string }).room_type_guess || "",
             original_url: batchImage.image.storage_path,
             filename: batchImage.image.original_filename,
           }),

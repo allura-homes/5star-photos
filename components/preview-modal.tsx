@@ -10,24 +10,24 @@ import { cn } from "@/lib/utils"
 import { submitFeedback } from "@/lib/actions/feedback-actions"
 
 const PROVIDER_LABELS: Record<number, string> = {
-  1: "Nano Banana Pro",
-  2: "GPT Image 1",
-  3: "GPT Image 1 Mini",
-  4: "GPT Image 1.5",
+  1: "V1 · OpenAI Image 1.5",
+  2: "V2 · OpenAI Image 2",
+  3: "V3 · Google Gemini 3 Pro Image",
+  4: "V4 · Retired Flux model",
 }
 
 function getModelProvider(variationNumber: number): ModelProvider {
   switch (variationNumber) {
     case 1:
-      return "nano_banana_pro"
-    case 2:
-      return "openai"
-    case 3:
-      return "openai_mini"
-    case 4:
       return "openai_1_5"
-    default:
+    case 2:
+      return "openai_2"
+    case 3:
       return "nano_banana_pro"
+    case 4:
+      return "flux_2_pro"
+    default:
+      return "openai_1_5"
   }
 }
 

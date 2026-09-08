@@ -30,9 +30,9 @@ export const CREDIT_COSTS = {
 
 export type CreditAction = keyof typeof CREDIT_COSTS
 
-// The two approved models every plan gets (V1 + V2). Pro and Max unlock every
-// active model in lib/constants/models.ts.
-export const BASE_MODELS = ["openai", "nano_banana_pro"] as const
+// The three approved models every plan gets (V1 + V2 + V3). Pro and Max unlock
+// every active model in lib/constants/models.ts.
+export const BASE_MODELS = ["openai_1_5", "openai_2", "nano_banana_pro"] as const
 
 export const PLANS: Record<PlanId, Plan> = {
   free: {
@@ -47,7 +47,7 @@ export const PLANS: Record<PlanId, Plan> = {
     highlights: [
       `${WELCOME_CREDITS} welcome credits, one time`,
       "Enough for 3 photos with hi-res downloads",
-      "2 AI models per transform",
+      "3 AI models per transform",
     ],
   },
   startup: {
@@ -59,7 +59,7 @@ export const PLANS: Record<PlanId, Plan> = {
     monthlyCredits: 100,
     models: BASE_MODELS,
     allModels: false,
-    highlights: ["V1 and V2 models on every transform", "Buy top-up packs anytime", "Cancel or change plans anytime"],
+    highlights: ["V1, V2 and V3 models on every transform", "Buy top-up packs anytime", "Cancel or change plans anytime"],
   },
   pro: {
     id: "pro",

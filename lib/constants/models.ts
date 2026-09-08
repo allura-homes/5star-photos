@@ -3,9 +3,8 @@ import type { ModelProvider } from "@/lib/types"
 /**
  * Single source of truth for how image models are shown to people.
  *
- * Users never see provider names; they see "V1", "V2", "V4" with a short
- * plain-language description. Keep this in sync with MODEL_CONFIGURATION.md
- * and the MODEL_CONFIG list in app/transform/[imageId]/page.tsx.
+ * Users never see provider names; they see "V1", "V2", "V3" with a short
+ * plain-language description. Keep this in sync with plan access rules.
  */
 export interface ModelInfo {
   provider: ModelProvider
@@ -21,46 +20,32 @@ export interface ModelInfo {
 
 export const MODELS: ModelInfo[] = [
   {
-    provider: "openai",
-    label: "V1",
-    description: "Balanced enhancement. Keeps the room faithful while fixing light, color and clutter.",
-    active: true,
-    modelId: "gpt-image-1",
-  },
-  {
-    provider: "nano_banana_pro",
-    label: "V2",
-    description: "Bolder, brighter look. Strong on skies, lawns and warm interiors.",
-    active: true,
-    modelId: "gemini-3-pro-image-preview",
-  },
-  {
-    provider: "flux_2_pro",
-    label: "V3",
-    description: "Retired. Previously used for stylised results.",
-    active: false,
-    modelId: "flux-2-pro (fal.ai)",
-  },
-  {
-    provider: "openai_2",
-    label: "V4",
-    description: "Temporarily unavailable. This model is not currently included in transforms.",
-    active: false,
-    modelId: "gpt-image-2",
-  },
-  {
     provider: "openai_1_5",
-    label: "V1.5",
-    description: "Retired.",
-    active: false,
+    label: "V1",
+    description: "OpenAI's earlier image model. Balanced, faithful room enhancements.",
+    active: true,
     modelId: "gpt-image-1.5",
   },
   {
-    provider: "openai_mini",
-    label: "Mini",
-    description: "Retired low-cost draft model.",
+    provider: "openai_2",
+    label: "V2",
+    description: "OpenAI's newest image model for the sharpest detail and finish.",
+    active: true,
+    modelId: "gpt-image-2",
+  },
+  {
+    provider: "nano_banana_pro",
+    label: "V3",
+    description: "Google's latest image model. Strong on light, color and composition.",
+    active: true,
+    modelId: "gemini-3-pro-image",
+  },
+  {
+    provider: "flux_2_pro",
+    label: "V4",
+    description: "Reserved for a future model or legacy comparison.",
     active: false,
-    modelId: "gpt-image-1-mini",
+    modelId: "flux-2-pro (fal.ai)",
   },
 ]
 

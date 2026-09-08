@@ -36,7 +36,7 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
     const config = PLANS[plan]
     summary = {
       title: `${config.name} plan`,
-      detail: `${config.monthlyCredits} credits every month. ${config.allModels ? "Every AI model included." : "V1 and V2 models."}`,
+      detail: `${config.monthlyCredits} credits every month. ${config.allModels ? "Every AI model included." : "V1, V2 and V3 models."}`,
       price: formatPrice(planPriceCents(plan, chosenInterval)),
       cadence: chosenInterval === "year" ? "per year" : "per month",
     }

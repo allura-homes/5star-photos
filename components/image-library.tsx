@@ -19,9 +19,10 @@ import { useAuthContext } from "@/lib/contexts/auth-context"
 // Model to user-friendly label mapping (matches transform page)
 const MODEL_LABELS: Record<string, string> = {
   openai_1_5: "V1",
-  nano_banana_pro: "V2",
-  flux_2_pro: "V3",
-  openai_2: "V4",
+  openai_2: "V2",
+  nano_banana_pro: "V3",
+  nano_banana: "V3",
+  flux_2_pro: "V4",
 }
 
 function getModelLabel(sourceModel: string | null | undefined): string {

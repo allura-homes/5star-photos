@@ -92,7 +92,7 @@ export function BillingSection({ balance }: { balance: CreditBalance }) {
                 isFree ? "bg-white/10 text-slate-200" : "bg-[#FF3EDB]/20 text-[#FF3EDB]"
               }`}
             >
-              {plan.allModels ? "All models" : "V1 + V2"}
+              {plan.allModels ? "All models" : "V1 + V2 + V3"}
             </span>
           </div>
 
