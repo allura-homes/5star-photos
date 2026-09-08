@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/grant-annual-credits",
+      "schedule": "15 6 * * *"
+    }
+  ]
+}

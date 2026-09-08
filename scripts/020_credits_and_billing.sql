@@ -209,3 +209,23 @@ begin
   return new;
 end;
 $$;
+
+-- Keep the legacy profiles.tokens column mirrored to the new balances so
+-- existing UI reads remain correct.
+create or replace function public.sync_profile_tokens()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.tokens := new.plan_credits + new.topup_credits;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_sync_tokens on public.profiles;
+create trigger profiles_sync_tokens
+  before insert or update of plan_credits, topup_credits on public.profiles
+  for each row execute function public.sync_profile_tokens();
+
+update public.profiles set tokens = plan_credits + topup_credits
+where tokens is distinct from plan_credits + topup_credits;

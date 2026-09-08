@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server"
 import { Buffer } from "buffer"
 import { requireUser } from "@/lib/api-auth"
+import { createDirectClient } from "@/lib/supabase/direct"
 
 interface CloudinaryEdits {
   brightness: number
@@ -972,12 +973,61 @@ The final image should look like it was shot with professional studio lighting -
  * See MODEL_CONFIGURATION.md for model details.
  */
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function POST(req: NextRequest) {
   // SECURITY: this route spends paid OpenAI / Gemini / fal credits.
   // Reject unauthenticated callers before reading the body.
   const auth = await requireUser(req)
   if (!auth.ok) return auth.response
 
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+  } catch {
+    return Response.json({ error: "Invalid request body", code: "BAD_REQUEST" }, { status: 400 })
+  }
+
+  // BILLING: AI generations must reference a transform the caller already paid
+  // for via startTransform(). The charge row also fixes which models the plan
+  // may run, so a Start-up user cannot request a Pro-only model by hand.
+  const useAi = body.use_ai_models !== false
+  const transformId = typeof body.transform_id === "string" ? body.transform_id : null
+  const admin = createDirectClient()
+
+  if (useAi) {
+    if (!transformId || !UUID_RE.test(transformId)) {
+      return Response.json({ error: "Start a transform before requesting variations.", code: "NO_TRANSFORM" }, { status: 402 })
+    }
+    const { data: charge } = await admin
+      .from("transform_charges")
+      .select("transform_id, models, refunded_at, charged_at")
+      .eq("transform_id", transformId)
+      .eq("user_id", auth.user.id)
+      .single()
+
+    const ageMs = charge ? Date.now() - new Date(charge.charged_at).getTime() : Infinity
+    if (!charge || charge.refunded_at || ageMs > 30 * 60 * 1000) {
+      return Response.json({ error: "This transform has expired. Start a new one.", code: "TRANSFORM_EXPIRED" }, { status: 402 })
+    }
+    if (!charge.models.includes(String(body.provider))) {
+      return Response.json(
+        { error: "This model is available on Pro and Max plans.", code: "MODEL_LOCKED" },
+        { status: 403 },
+      )
+    }
+  }
+
+  const response = await runEditImage(body)
+
+  if (useAi && transformId && response.ok) {
+    await admin.rpc("increment_transform_success", { p_transform_id: transformId })
+  }
+
+  return response
+}
+
+async function runEditImage(body: Record<string, unknown>): Promise<Response> {
   try {
     const {
       original_url,
@@ -991,7 +1041,7 @@ export async function POST(req: NextRequest) {
       room_type_guess,
       apply_watermark = true,
       style_mode, // Accept style_mode to determine if AI should be used
-    } = await req.json()
+    } = body as any
 
     console.log(`[v0] Edit-image API called - Provider: ${provider}, Variation: ${variation_number}`)
 

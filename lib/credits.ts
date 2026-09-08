@@ -1,0 +1,170 @@
+import "server-only"
+
+import { createDirectClient } from "@/lib/supabase/direct"
+import { CREDIT_COSTS, type CreditAction, type PlanId, isPlanId } from "@/lib/plans"
+
+export type SpendCode = "ok" | "insufficient" | "past_due" | "forbidden" | "no_profile"
+
+export interface SpendResult {
+  ok: boolean
+  code: SpendCode
+  planCredits: number
+  topupCredits: number
+  total: number
+}
+
+export interface CreditBalance {
+  plan: PlanId
+  planCredits: number
+  topupCredits: number
+  total: number
+  subscriptionStatus: string | null
+  currentPeriodEnd: string | null
+  billingInterval: "month" | "year" | null
+  stripeCustomerId: string | null
+}
+
+const LEDGER_TYPE: Record<CreditAction, string> = {
+  upload: "upload",
+  transform: "transform",
+  save_variation: "save_variation",
+  download_hires: "download_hires",
+  upscale: "upscale",
+}
+
+export async function getBalance(userId: string): Promise<CreditBalance | null> {
+  const supabase = createDirectClient()
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(
+      "plan, plan_credits, topup_credits, subscription_status, current_period_end, billing_interval, stripe_customer_id",
+    )
+    .eq("id", userId)
+    .single()
+
+  if (error || !data) return null
+
+  const plan: PlanId = isPlanId(data.plan) ? data.plan : "free"
+  // Top-up credits are frozen (not lost) while a user is not subscribed.
+  const usableTopup = plan === "free" ? 0 : data.topup_credits
+
+  return {
+    plan,
+    planCredits: data.plan_credits,
+    topupCredits: data.topup_credits,
+    total: data.plan_credits + usableTopup,
+    subscriptionStatus: data.subscription_status,
+    currentPeriodEnd: data.current_period_end,
+    billingInterval: data.billing_interval,
+    stripeCustomerId: data.stripe_customer_id,
+  }
+}
+
+interface SpendOptions {
+  description?: string
+  imageId?: string | null
+  jobId?: string | null
+}
+
+// Atomically debits credits (plan first, then top-up) and writes the ledger row.
+// A negative amount is a refund/credit back to the plan bucket.
+export async function spendCredits(
+  userId: string,
+  amount: number,
+  type: CreditAction | "refund" | "admin_adjust",
+  options: SpendOptions = {},
+): Promise<SpendResult> {
+  const supabase = createDirectClient()
+  const ledgerType = type in LEDGER_TYPE ? LEDGER_TYPE[type as CreditAction] : type
+
+  const { data, error } = await supabase.rpc("spend_credits", {
+    p_user: userId,
+    p_amount: amount,
+    p_type: ledgerType,
+    p_description: options.description ?? null,
+    p_image_id: options.imageId ?? null,
+    p_job_id: options.jobId ?? null,
+  })
+
+  if (error || !data || data.length === 0) {
+    console.error("[credits] spend_credits failed:", error?.message)
+    return { ok: false, code: "no_profile", planCredits: 0, topupCredits: 0, total: 0 }
+  }
+
+  const row = data[0] as { ok: boolean; plan_credits: number; topup_credits: number; code: SpendCode }
+  return {
+    ok: row.ok,
+    code: row.code,
+    planCredits: row.plan_credits,
+    topupCredits: row.topup_credits,
+    total: row.plan_credits + row.topup_credits,
+  }
+}
+
+export async function chargeForAction(
+  userId: string,
+  action: CreditAction,
+  options: SpendOptions = {},
+): Promise<SpendResult> {
+  return spendCredits(userId, CREDIT_COSTS[action], action, options)
+}
+
+export async function refundCredits(userId: string, amount: number, options: SpendOptions = {}): Promise<SpendResult> {
+  return spendCredits(userId, -Math.abs(amount), "refund", options)
+}
+
+// Used by the webhook to set/reset the monthly plan bucket and to add top-ups.
+export async function setPlanCredits(
+  userId: string,
+  planCredits: number,
+  ledgerType: "plan_grant" | "period_reset",
+  description: string,
+): Promise<void> {
+  const supabase = createDirectClient()
+  const { data: profile } = await supabase.from("profiles").select("topup_credits").eq("id", userId).single()
+
+  const { error } = await supabase.from("profiles").update({ plan_credits: planCredits }).eq("id", userId)
+  if (error) throw new Error(`setPlanCredits failed: ${error.message}`)
+
+  await supabase.from("token_transactions").insert({
+    user_id: userId,
+    type: ledgerType,
+    amount: planCredits,
+    description,
+    balance_after: planCredits + (profile?.topup_credits ?? 0),
+  })
+}
+
+export async function addTopupCredits(userId: string, credits: number, description: string): Promise<void> {
+  const supabase = createDirectClient()
+  const { data: profile, error: readError } = await supabase
+    .from("profiles")
+    .select("plan_credits, topup_credits")
+    .eq("id", userId)
+    .single()
+  if (readError || !profile) throw new Error(`addTopupCredits: profile not found`)
+
+  const newTopup = profile.topup_credits + credits
+  const { error } = await supabase.from("profiles").update({ topup_credits: newTopup }).eq("id", userId)
+  if (error) throw new Error(`addTopupCredits failed: ${error.message}`)
+
+  await supabase.from("token_transactions").insert({
+    user_id: userId,
+    type: "topup_purchase",
+    amount: credits,
+    description,
+    balance_after: profile.plan_credits + newTopup,
+  })
+}
+
+export function insufficientCreditsResponse(result: SpendResult, action: CreditAction) {
+  return {
+    error:
+      result.code === "past_due"
+        ? "Your last payment failed. Update your payment method to keep creating."
+        : "You're out of credits.",
+    code: result.code === "past_due" ? "PAST_DUE" : "INSUFFICIENT_CREDITS",
+    required: CREDIT_COSTS[action],
+    available: result.total,
+  }
+}
