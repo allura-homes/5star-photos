@@ -86,7 +86,7 @@ export async function updateSession(request: NextRequest) {
   // Protected routes that require authentication
   // Note: Most routes handle auth client-side via useAuthContext
   // Only add routes here that MUST be server-protected
-  const protectedPaths = ["/dashboard", "/account", "/history", "/library", "/transform", "/batch-transform"]
+  const protectedPaths = ["/dashboard", "/account", "/history", "/library", "/transform", "/batch-transform", "/checkout"]
   const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path))
 
   // Admin-only routes
@@ -98,7 +98,8 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = "/auth/login"
     url.search = ""
-    url.searchParams.set("redirect", pathname)
+    // Keep the query string so /checkout?plan=pro survives the login round-trip.
+    url.searchParams.set("redirect", `${pathname}${request.nextUrl.search}`)
     return NextResponse.redirect(url)
   }
 

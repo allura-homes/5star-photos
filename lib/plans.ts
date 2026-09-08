@@ -55,7 +55,7 @@ export const PLANS: Record<PlanId, Plan> = {
     monthlyCredits: 100,
     models: BASE_MODELS,
     allModels: false,
-    highlights: ["100 credits per month", "About 7 finished photos", "2 AI models per transform", "Buy top-up packs anytime"],
+    highlights: ["V1 and V2 models on every transform", "Buy top-up packs anytime", "Cancel or change plans anytime"],
   },
   pro: {
     id: "pro",
@@ -67,10 +67,10 @@ export const PLANS: Record<PlanId, Plan> = {
     models: [],
     allModels: true,
     highlights: [
-      "270 credits per month",
-      "About 18 finished photos",
       "Every AI model, side by side",
-      "Best per-credit value for most agents",
+      "More candidates per photo, better picks",
+      "Buy top-up packs anytime",
+      "Best value for most agents",
     ],
   },
   max: {
@@ -82,7 +82,7 @@ export const PLANS: Record<PlanId, Plan> = {
     monthlyCredits: 570,
     models: [],
     allModels: true,
-    highlights: ["570 credits per month", "About 38 finished photos", "Every AI model, side by side", "Lowest cost per credit"],
+    highlights: ["Every AI model, side by side", "Lowest cost per credit", "Buy top-up packs anytime", "Built for whole listings at once"],
   },
 }
 

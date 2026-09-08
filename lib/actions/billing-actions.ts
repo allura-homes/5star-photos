@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { createDirectClient } from "@/lib/supabase/direct"
 import { stripe, getPriceIdByLookupKey, getSiteUrl } from "@/lib/stripe"
-import { getBalance } from "@/lib/credits"
+import { getBalance, type CreditBalance } from "@/lib/credits"
 import {
   PLANS,
   getTopupPack,
@@ -155,6 +155,13 @@ export async function createPortalSession(): Promise<{ url: string }> {
     return_url: `${getSiteUrl()}/account`,
   })
   return { url: session.url }
+}
+
+// Fresh balance for the signed-in user. Used by /checkout/return to poll until
+// the Stripe webhook has landed, and by the Account page.
+export async function getMyBalance(): Promise<CreditBalance | null> {
+  const user = await requireSessionUser()
+  return getBalance(user.id)
 }
 
 export async function getCheckoutSessionStatus(sessionId: string): Promise<{

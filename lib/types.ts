@@ -140,12 +140,8 @@ export interface PreviewVariation {
   error?: string
 }
 
-export const TOKEN_COSTS = {
-  upload: 1,
-  transform: 1,
-  save_variation: 1,
-  download_hires: 4,
-} as const
+// Legacy alias. lib/plans.ts is the single source of truth for credit prices.
+export { CREDIT_COSTS as TOKEN_COSTS } from "@/lib/plans"
 
 // Projects for organizing photos by property
 export interface Project {
