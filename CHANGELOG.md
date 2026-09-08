@@ -2,6 +2,14 @@
 
 All notable changes to the 5star.photos app will be documented in this file.
 
+## [Bonus credits & /beta] - 2026-09-08
+
+- New `profiles.bonus_credits` bucket: never expires, spendable on every plan (including Free), drawn last after plan and top-up credits. Mirrored into `tokens`. Ledger type `bonus_grant`.
+- All 88 existing accounts granted 1,000 bonus credits (internal test accounts), one audited ledger row each. Idempotent in `scripts/021_bonus_credits.sql`.
+- `/beta` landing page: signup with a 50-credit non-expiring bonus ("a $12 value"), applied by the `handle_new_user` trigger via `signup_source` metadata, or by the auth callback for Google sign-ups (one-time per account).
+- Signup form extracted to `components/auth/signup-form.tsx` and shared by `/auth/signup` and `/beta`.
+- Account and admin pages show the bonus bucket; ledger labels cover every DB type.
+
 ## [Credits & Billing] - 2026-09-08
 
 ### Summary
