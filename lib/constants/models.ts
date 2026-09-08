@@ -44,8 +44,8 @@ export const MODELS: ModelInfo[] = [
   {
     provider: "openai_2",
     label: "V4",
-    description: "Newest OpenAI model. Sharpest detail when it is available.",
-    active: true,
+    description: "Temporarily unavailable. This model is not currently included in transforms.",
+    active: false,
     modelId: "gpt-image-2",
   },
   {
