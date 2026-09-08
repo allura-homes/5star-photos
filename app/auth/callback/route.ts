@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { safeRedirectPath } from "@/lib/safe-redirect"
 
 /**
  * Auth callback handler for email confirmations and OAuth redirects.
@@ -8,7 +9,7 @@ import { NextResponse } from "next/server"
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get("code")
-  const next = searchParams.get("next") ?? "/library"
+  const next = safeRedirectPath(searchParams.get("next"))
 
   // Handle token_hash for email confirmation (PKCE flow)
   const token_hash = searchParams.get("token_hash")
