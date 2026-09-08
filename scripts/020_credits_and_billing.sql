@@ -229,3 +229,21 @@ create trigger profiles_sync_tokens
 
 update public.profiles set tokens = plan_credits + topup_credits
 where tokens is distinct from plan_credits + topup_credits;
+
+-- Transform charge bookkeeping used to verify refunds server-side.
+alter table public.transform_charges add column if not exists success_count integer not null default 0;
+alter table public.transform_charges add column if not exists models text[] not null default '{}';
+
+create or replace function public.increment_transform_success(p_transform_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.transform_charges
+  set success_count = success_count + 1
+  where transform_id = p_transform_id;
+$$;
+
+revoke all on function public.increment_transform_success(uuid) from public, anon, authenticated;
+grant execute on function public.increment_transform_success(uuid) to service_role;

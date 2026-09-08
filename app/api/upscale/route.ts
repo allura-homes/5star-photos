@@ -1,65 +1,100 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUser } from "@/lib/api-auth"
+import { chargeForAction, refundCredits } from "@/lib/credits"
+import { CREDIT_COSTS } from "@/lib/plans"
 
-// Upscale images using fal.ai ESRGAN
-// Returns a higher-resolution version of the input image
+// Hi-res download gate.
 //
-// DEPRECATED 2026-05-15: fal.ai upscaling disabled due to billing issues
-// To re-enable: Remove the early return below and ensure FAL_KEY is configured
-// The fal.ai ESRGAN code is preserved below for future use
+// Every hi-res download goes through here so the credit charge is enforced
+// server-side. Real upscaling (fal.ai ESRGAN) is currently disabled; when it is
+// re-enabled set UPSCALE_ENABLED=true and the extra `upscale` credit is charged
+// on top of the download.
+//
+// DEPRECATED 2026-05-15: fal.ai upscaling disabled due to billing issues.
+
+const UPSCALE_ENABLED = process.env.UPSCALE_ENABLED === "true"
+
+function isAllowedImageUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== "https:") return false
+    const supabaseHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname
+    return (
+      url.hostname === supabaseHost ||
+      url.hostname.endsWith(".public.blob.vercel-storage.com") ||
+      url.hostname.endsWith(".fal.media") ||
+      url.hostname === "res.cloudinary.com"
+    )
+  } catch {
+    return false
+  }
+}
 
 export async function POST(request: NextRequest) {
+  // SECURITY: gate before any paid provider call.
+  const auth = await requireUser(request)
+  if (!auth.ok) return auth.response
+  const userId = auth.user.id
+
+  let body: { imageUrl?: unknown; scale?: unknown; filename?: unknown }
   try {
-    // SECURITY: gate before any paid provider call (even while disabled).
-    const auth = await requireUser(request)
-    if (!auth.ok) return auth.response
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
+  }
 
-    const { imageUrl } = await request.json()
+  const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl : ""
+  if (!imageUrl || (!imageUrl.startsWith("data:image/") && !isAllowedImageUrl(imageUrl))) {
+    return NextResponse.json({ error: "Image URL is required" }, { status: 400 })
+  }
+  const filename = typeof body.filename === "string" ? body.filename.slice(0, 200) : "photo"
 
-    if (!imageUrl) {
-      return NextResponse.json({ error: "Image URL is required" }, { status: 400 })
-    }
+  const total = CREDIT_COSTS.download_hires + (UPSCALE_ENABLED ? CREDIT_COSTS.upscale : 0)
+  const charge = await chargeForAction(userId, "download_hires", {
+    description: `Hi-res download of ${filename}`,
+    amount: total,
+  })
+  if (!charge.ok) {
+    return NextResponse.json(
+      {
+        error: charge.code === "past_due" ? "Your last payment failed." : "You're out of credits.",
+        code: charge.code === "past_due" ? "PAST_DUE" : "INSUFFICIENT_CREDITS",
+        required: total,
+        available: charge.total,
+        plan: charge.plan,
+      },
+      { status: 402 },
+    )
+  }
 
-    // DEPRECATED: Skip fal.ai upscaling, return original image
-    // This allows downloads to work without fal.ai billing
-    console.log("[v0] Upscaling disabled (fal.ai deprecated), returning original image")
-    return NextResponse.json({ url: imageUrl, upscaled: false })
+  if (!UPSCALE_ENABLED) {
+    return NextResponse.json({ url: imageUrl, upscaled: false, creditsRemaining: charge.total })
+  }
 
-    /* PRESERVED FOR FUTURE RE-ENABLEMENT:
+  try {
     const falKey = process.env.FAL_KEY
     if (!falKey) {
-      console.warn("[v0] No FAL_KEY configured, returning original image")
-      return NextResponse.json({ url: imageUrl })
+      await refundCredits(userId, CREDIT_COSTS.upscale, { description: "Refund: upscaler unavailable" })
+      return NextResponse.json({ url: imageUrl, upscaled: false })
     }
 
-    console.log(`[v0] Upscaling image ${scale}x using ESRGAN...`)
-
+    const scale = typeof body.scale === "number" ? Math.min(Math.max(body.scale, 1), 4) : 2
     const response = await fetch("https://fal.run/fal-ai/esrgan", {
       method: "POST",
-      headers: {
-        "Authorization": `Key ${falKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        image_url: imageUrl,
-        scale: Math.min(scale, 4),
-        model: "RealESRGAN_x4plus",
-        output_format: "png",
-      }),
+      headers: { Authorization: `Key ${falKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ image_url: imageUrl, scale, model: "RealESRGAN_x4plus", output_format: "png" }),
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[v0] Upscale error:", errorText)
+      console.error("[v0] Upscale error:", response.status)
+      await refundCredits(userId, CREDIT_COSTS.upscale, { description: "Refund: upscale failed" })
       return NextResponse.json({ url: imageUrl, upscaled: false })
     }
 
     const result = await response.json()
-    console.log("[v0] Upscale complete")
-
     if (result.image?.url) {
-      return NextResponse.json({ 
-        url: result.image.url, 
+      return NextResponse.json({
+        url: result.image.url,
         upscaled: true,
         originalUrl: imageUrl,
         width: result.image.width,
@@ -67,11 +102,11 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    await refundCredits(userId, CREDIT_COSTS.upscale, { description: "Refund: upscale returned no image" })
     return NextResponse.json({ url: imageUrl, upscaled: false })
-    */
   } catch (error) {
     console.error("[v0] Upscale error:", error)
-    const { imageUrl } = await request.json().catch(() => ({ imageUrl: null }))
+    await refundCredits(userId, CREDIT_COSTS.upscale, { description: "Refund: upscale failed" })
     return NextResponse.json({ url: imageUrl, upscaled: false })
   }
 }

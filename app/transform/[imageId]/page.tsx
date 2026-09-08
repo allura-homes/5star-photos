@@ -7,6 +7,8 @@ import { AppShell } from "@/components/app-shell"
 import { toast } from "sonner"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { getImageById, transformImage } from "@/lib/actions/image-actions"
+import { startTransform, finishTransform } from "@/lib/actions/transform-actions"
+import { InsufficientCreditsDialog, type CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
 import type { UserImage, ModelProvider, EnhancementPreferences } from "@/lib/types"
 import { TOKEN_COSTS, DEFAULT_ENHANCEMENT_PREFERENCES } from "@/lib/types"
 import {
@@ -32,7 +34,9 @@ import {
   Split,
   MessageSquare,
   ChevronDown,
+  Lock,
 } from "lucide-react"
+import Link from "next/link"
 import { submitFeedback } from "@/lib/actions/feedback-actions"
 import { SingleImagePreferencesModal } from "@/components/single-image-preferences-modal"
 import { DownloadSelectionModal } from "@/components/download-selection-modal"
@@ -43,6 +47,8 @@ interface PreviewVariation {
   preview_url: string | null
   is_loading: boolean
   error?: string
+  /** Model exists but the user's plan does not include it. */
+  locked?: boolean
 }
 
 // APPROVED, tested models per MODEL_CONFIGURATION.md (kept in sync with
@@ -114,6 +120,9 @@ export default function TransformPage() {
   const [currentPrompt, setCurrentPrompt] = useState<string | null>(null)
   const [isPromptExpanded, setIsPromptExpanded] = useState(false)
 
+  // Billing
+  const [shortfall, setShortfall] = useState<CreditShortfall | null>(null)
+
   const loadImage = useCallback(async () => {
     setIsLoading(true)
     const { image: fetchedImage, error: fetchError } = await getImageById(imageId)
@@ -149,26 +158,57 @@ export default function TransformPage() {
 
     // Use passed preferences or fall back to state
     const activePreferences = customPreferences || preferences
-    
+
+    if (!image.storage_path) {
+      console.error("[v0] No storage_path found for image")
+      toast.error("This photo has no file attached. Upload it again.")
+      return
+    }
+
     setIsTransforming(true)
+
+    // BILLING: one charge covers every model in this run. The server decides
+    // which models the plan includes; locked ones render as upgrade cards.
+    const start = await startTransform(image.id)
+    if (!start.ok) {
+      setIsTransforming(false)
+      if (start.code === "INSUFFICIENT_CREDITS" || start.code === "PAST_DUE") {
+        setShortfall({
+          required: start.required ?? TOKEN_COSTS.transform,
+          available: start.available ?? 0,
+          plan: start.plan ?? "free",
+          pastDue: start.code === "PAST_DUE",
+        })
+      } else {
+        toast.error(start.error ?? "Could not start the transform.")
+      }
+      return
+    }
+
+    const transformId = start.transformId
+    const runModels = start.models
+    const lockedModels = start.lockedModels ?? []
+    refreshProfile()
+
     setHasTransformed(true)
     setCurrentPrompt(null) // Clear prompt when starting new transformation
     setIsPromptExpanded(false)
 
-    setPreviews(
-      MODEL_CONFIG.map(({ model, label }) => ({
+    setPreviews([
+      ...runModels.map(({ model, label }) => ({
         model,
         modelLabel: label,
         preview_url: null,
         is_loading: true,
       })),
-    )
-
-    if (!image.storage_path) {
-      console.error("[v0] No storage_path found for image")
-      setIsTransforming(false)
-      return
-    }
+      ...lockedModels.map(({ model, label }) => ({
+        model,
+        modelLabel: label,
+        preview_url: null,
+        is_loading: false,
+        locked: true,
+      })),
+    ])
 
     // Log the preferences being used for debugging
     console.log("[v0] Running transformation with preferences:", JSON.stringify(activePreferences))
@@ -201,13 +241,14 @@ export default function TransformPage() {
       imagePrompt = `Enhance this ${image.classification || "real estate"} photo with professional quality: improve lighting, enhance colors, increase sharpness, and make the image more vibrant while keeping the exact same scene and composition.`
     }
 
-    const modelPromises = MODEL_CONFIG.map(async ({ model, label }, index) => {
+    const modelPromises = runModels.map(async ({ model, label }, index) => {
       try {
         console.log(`[v0] Starting ${label} (${model}) - variation ${index + 1}`)
         const response = await fetch("/api/edit-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            transform_id: transformId,
             original_url: image.storage_path,
             filename: image.original_filename,
             model,
@@ -255,6 +296,7 @@ export default function TransformPage() {
 
     setPreviews((prev) =>
       prev.map((p, idx) => {
+        if (p.locked) return p
         const result = results.find((r) => r.index === idx)
         return result
           ? {
@@ -268,7 +310,6 @@ export default function TransformPage() {
     )
 
     setIsTransforming(false)
-    refreshProfile() // Refresh token count
 
     const okCount = results.filter((r) => r.preview_url && !r.error).length
     if (okCount === results.length) {
@@ -276,8 +317,15 @@ export default function TransformPage() {
     } else if (okCount > 0) {
       toast.warning(`${okCount} of ${results.length} variations finished. Press Transform again to retry the rest.`)
     } else {
-      toast.error("None of the models could finish this photo. Try again in a minute.")
+      // Nothing came back: the server verifies success_count === 0 and refunds.
+      const { refunded } = await finishTransform(transformId)
+      toast.error(
+        refunded
+          ? "None of the models could finish this photo. Your credits were refunded."
+          : "None of the models could finish this photo. Try again in a minute.",
+      )
     }
+    refreshProfile() // Refresh credit balance
 
     // Auto-save successful transformations to the database
     // This ensures users can return to their transformations later
@@ -287,9 +335,10 @@ export default function TransformPage() {
     if (successfulResults.length > 0) {
       console.log("[v0] Starting auto-save for", successfulResults.length, "transformations")
       
-      // Save each successful transformation in the background
+      // Save each successful transformation in the background. Included in
+      // the transform price, so autoSave tells the API not to charge again.
       for (const result of successfulResults) {
-        const modelConfig = MODEL_CONFIG[result.index]
+        const modelConfig = runModels[result.index]
         console.log(`[v0] Auto-saving ${modelConfig.label}...`)
         try {
           const saveBody = {
@@ -297,6 +346,7 @@ export default function TransformPage() {
             imageData: result.preview_url,
             sourceModel: modelConfig.model,
             transformationPrompt: imagePrompt,
+            autoSave: true,
           }
           
           const saveResponse = await fetch("/api/save-variation", {
@@ -344,7 +394,14 @@ export default function TransformPage() {
 
       const result = await response.json()
 
-      if (!response.ok || result.error) {
+      if (response.status === 402) {
+        setShortfall({
+          required: result.required ?? TOKEN_COSTS.save_variation,
+          available: result.available ?? 0,
+          plan: result.plan ?? "free",
+          pastDue: result.code === "PAST_DUE",
+        })
+      } else if (!response.ok || result.error) {
         toast.error(typeof result.error === "string" ? result.error : "We couldn't save this variation. Please try again.")
       } else {
         toast.success(`${preview.modelLabel} saved to your library.`)
@@ -465,12 +522,15 @@ export default function TransformPage() {
                 </div>
               </div>
 
-              {/* Token balance */}
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10">
+              {/* Credit balance */}
+              <Link
+                href="/account#credits"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+              >
                 <Coins className="w-4 h-4 text-amber-400" />
                 <span className="text-white font-medium">{profile?.tokens || 0}</span>
-                <span className="text-slate-400 text-sm">tokens</span>
-              </div>
+                <span className="text-slate-400 text-sm">credits</span>
+              </Link>
             </div>
 
             {/* Main content */}
@@ -533,7 +593,8 @@ export default function TransformPage() {
                             className="flex items-center gap-2 px-6 py-3 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all glow-magenta"
                         >
                           <Sparkles className="w-4 h-4" />
-                          Transform (Free)
+                          Transform
+                          <span className="text-white/70 text-sm">{TOKEN_COSTS.transform} credits</span>
                         </button>
                         <button
                           onClick={() => setShowPreferences(true)}
@@ -544,6 +605,24 @@ export default function TransformPage() {
                           Custom Options
                         </button>
                       </div>
+                    </div>
+                  ) : selectedPreview?.locked ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
+                      <div className="flex size-14 items-center justify-center rounded-full bg-white/10">
+                        <Lock className="size-6 text-slate-300" aria-hidden="true" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <p className="font-semibold text-white">{selectedPreview.modelLabel} is a Pro model</p>
+                        <p className="text-sm text-slate-400 text-pretty max-w-xs">
+                          Pro and Max plans run every model on each transform so you can pick the best result.
+                        </p>
+                      </div>
+                      <Link
+                        href="/pricing?highlight=pro"
+                        className="rounded-xl gradient-magenta-violet px-5 py-2.5 text-sm font-semibold text-white glow-magenta"
+                      >
+                        See Pro plans
+                      </Link>
                     </div>
                   ) : selectedPreview?.is_loading ? (
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -649,7 +728,7 @@ export default function TransformPage() {
                     >
                       <RefreshCw className={`w-4 h-4 ${isTransforming ? "animate-spin" : ""}`} />
                       Re-transform
-                      <span className="text-green-400 text-sm">(Free)</span>
+                      <span className="text-slate-400 text-sm">{TOKEN_COSTS.transform} cr</span>
                     </button>
 
                     {/* Save variation */}
@@ -659,20 +738,20 @@ export default function TransformPage() {
                       className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#6A1FBF]/20 text-[#FF3EDB] hover:bg-[#6A1FBF]/30 transition-colors disabled:opacity-50"
                     >
                       {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bookmark className="w-4 h-4" />}
-                      Save Variation
-                      <span className="text-green-400 text-sm">(Free)</span>
+                      Save as Working Image
+                      <span className="text-[#FF3EDB]/70 text-sm">{TOKEN_COSTS.save_variation} cr</span>
                     </button>
 
-  {/* Download hi-res */}
-  <button 
-    onClick={() => setShowDownloadModal(true)}
-    disabled={previews.length === 0}
-    className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100"
-  >
-    <Download className="w-4 h-4" />
-    Download Hi-Res
-    <span className="text-green-400 text-sm">(Free)</span>
-  </button>
+                    {/* Download hi-res */}
+                    <button
+                      onClick={() => setShowDownloadModal(true)}
+                      disabled={previews.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-magenta-violet text-white font-semibold hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Hi-Res
+                      <span className="text-white/70 text-sm">{TOKEN_COSTS.download_hires} cr</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1003,6 +1082,7 @@ export default function TransformPage() {
         />
       )}
       </>
+      <InsufficientCreditsDialog shortfall={shortfall} onClose={() => setShortfall(null)} />
     </AppShell>
   )
 }

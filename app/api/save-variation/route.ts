@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireUser } from "@/lib/api-auth"
+import { chargeForAction, refundCredits } from "@/lib/credits"
+import { CREDIT_COSTS } from "@/lib/plans"
 
 export const maxDuration = 60
 
@@ -96,11 +98,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
     }
 
-    const { parentImageId, imageData, sourceModel, transformationPrompt } = body ?? {}
+    const { parentImageId, imageData, sourceModel, transformationPrompt, autoSave } = body ?? {}
 
     if (!parentImageId || !imageData) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
+
+    // BILLING: results are stored automatically after a transform as part of
+    // that transform's price. Explicitly saving a result as a new working
+    // image (so it can be re-transformed) is its own 1-credit action.
+    const isBillable = autoSave !== true
     if (typeof parentImageId !== "string" || !UUID_RE.test(parentImageId)) {
       return NextResponse.json({ error: "Invalid parent image id" }, { status: 400 })
     }
@@ -116,6 +123,25 @@ export async function POST(request: NextRequest) {
     }
     const parentImage = parentImages[0]
     console.log("[v0] Parent image found:", parentImage.original_filename)
+
+    if (isBillable) {
+      const charge = await chargeForAction(userId, "save_variation", {
+        description: `Saved working image from ${parentImage.original_filename}`,
+        imageId: parentImageId,
+      })
+      if (!charge.ok) {
+        return NextResponse.json(
+          {
+            error: charge.code === "past_due" ? "Your last payment failed." : "You're out of credits.",
+            code: charge.code === "past_due" ? "PAST_DUE" : "INSUFFICIENT_CREDITS",
+            required: CREDIT_COSTS.save_variation,
+            available: charge.total,
+            plan: charge.plan,
+          },
+          { status: 402 },
+        )
+      }
+    }
 
     let finalStoragePath = imageData
 
@@ -149,6 +175,12 @@ export async function POST(request: NextRequest) {
         // Capture specific error during upload
         const errMsg = uploadError instanceof Error ? uploadError.message : String(uploadError)
         console.error("[v0] Upload exception:", errMsg)
+        if (isBillable) {
+          await refundCredits(userId, CREDIT_COSTS.save_variation, {
+            description: "Refund: save failed",
+            imageId: parentImageId,
+          })
+        }
         return NextResponse.json({ error: "We couldn't save this image. Please try again.", code: "UPLOAD_FAILED" }, { status: 500 })
       }
     }
@@ -174,22 +206,16 @@ export async function POST(request: NextRequest) {
     })
 
     if (!insertedImages || insertedImages.length === 0) {
+      if (isBillable) {
+        await refundCredits(userId, CREDIT_COSTS.save_variation, {
+          description: "Refund: save failed",
+          imageId: parentImageId,
+        })
+      }
       return NextResponse.json({ error: "Failed to save variation record" }, { status: 500 })
     }
     const image = insertedImages[0]
     console.log("[v0] Variation record created:", image.id)
-
-    // Usage log. Amount is 0 while TOKENS_ENFORCED is false (free beta).
-    await supabaseRest("token_transactions", {
-      method: "POST",
-      body: {
-        user_id: userId,
-        type: "save_variation",
-        amount: 0,
-        image_id: image.id,
-        description: `Saved variation of ${parentImage.original_filename} (free beta)`,
-      },
-    })
 
     console.log("[v0] Save variation complete!")
     return NextResponse.json({ success: true, image })
