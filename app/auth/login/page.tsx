@@ -102,7 +102,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950 p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full">
         <Link
           href="/"
@@ -112,7 +112,7 @@ function LoginForm() {
           Back to home
         </Link>
 
-        <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-8">
+        <div className="glass-card rounded-2xl p-8">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-white mb-2">Welcome back</h1>
             <p className="text-slate-400">Sign in to your account</p>
@@ -182,7 +182,7 @@ function LoginForm() {
               <div className="w-full border-t border-slate-700" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-slate-800/50 text-slate-500">or continue with</span>
+              <span className="px-2 bg-[#1b1530] rounded text-slate-400">or continue with</span>
             </div>
           </div>
 
@@ -230,7 +230,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950">
+        <div className="min-h-screen flex items-center justify-center">
           <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
         </div>
       }

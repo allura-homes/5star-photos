@@ -85,14 +85,75 @@
   --color-error-pink: var(--error-pink);
 }
 
+/* Section backdrop colors are registered so they can cross-fade between routes. */
+@property --section-glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #7a2fd6;
+}
+@property --section-base {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2c0f66;
+}
+@property --section-deep {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #0d0620;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  /* html carries the solid fallback color; body stays transparent so the
+     fixed .section-backdrop (z-index -10) is visible beneath the content. */
+  html {
+    @apply bg-background;
+  }
   body {
-    @apply bg-background text-foreground;
-    background: radial-gradient(circle at top left, #FF3EDB 0%, #6A1FBF 35%, #2F7BFF 60%, #16B2A5 100%);
-    background-attachment: fixed;
+    @apply text-foreground;
+    background: transparent;
+  }
+
+  /*
+   * One color family per section, three tones each (glow / base / deep).
+   * Modeled on CleanMyMac's per-tool screens: a luminous highlight top-left,
+   * a saturated mid-tone body, and a near-black vignette bottom-right.
+   */
+  .section-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: -10;
+    pointer-events: none;
+    background:
+      radial-gradient(115% 85% at 18% 8%, var(--section-glow) 0%, transparent 62%),
+      radial-gradient(80% 70% at 88% 92%, color-mix(in oklab, var(--section-base) 70%, black) 0%, transparent 65%),
+      linear-gradient(170deg, var(--section-base) 0%, var(--section-deep) 100%);
+    transition:
+      --section-glow 600ms ease,
+      --section-base 600ms ease,
+      --section-deep 600ms ease;
+  }
+  .section-backdrop[data-section="brand"] {
+    --section-glow: #9b3be0;
+    --section-base: #2c0f66;
+    --section-deep: #0d0620;
+  }
+  .section-backdrop[data-section="library"] {
+    --section-glow: #2f7bff;
+    --section-base: #13327f;
+    --section-deep: #060c24;
+  }
+  .section-backdrop[data-section="account"] {
+    --section-glow: #16b2a5;
+    --section-base: #0b5c58;
+    --section-deep: #041d1c;
+  }
+  .section-backdrop[data-section="admin"] {
+    --section-glow: #6b7590;
+    --section-base: #2a2f42;
+    --section-deep: #0a0c14;
   }
 }
 

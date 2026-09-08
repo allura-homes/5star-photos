@@ -302,7 +302,7 @@ export function SignupForm({ redirect, source, successNote, submitLabel = "Creat
           <div className="w-full border-t border-slate-700" />
         </div>
         <div className="relative flex justify-center text-sm">
-          <span className="px-2 bg-slate-800/50 text-slate-500">or continue with</span>
+          <span className="px-2 bg-[#1b1530] rounded text-slate-400">or continue with</span>
         </div>
       </div>
 

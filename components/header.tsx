@@ -9,7 +9,7 @@ export function Header() {
   const { isAuthenticated } = useAuthContext()
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-[#0B0D1A]/80 backdrop-blur-xl border-b border-white/10">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-black/25 backdrop-blur-xl border-b border-white/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-3">
         <Link
           href={isAuthenticated ? "/library" : "/"}

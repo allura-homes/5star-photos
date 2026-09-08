@@ -13,7 +13,7 @@ function SignupPageContent() {
   const redirect = safeRedirectPath(searchParams.get("redirect"))
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950 p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full">
         <Link
           href="/"
@@ -23,7 +23,7 @@ function SignupPageContent() {
           Back to home
         </Link>
 
-        <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-8">
+        <div className="glass-card rounded-2xl p-8">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-white mb-2">Create your account</h1>
             <p className="text-slate-400">Start enhancing your listing photos today</p>
@@ -51,7 +51,7 @@ export default function SignupPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950">
+        <div className="min-h-screen flex items-center justify-center">
           <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
         </div>
       }

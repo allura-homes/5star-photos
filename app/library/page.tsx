@@ -50,7 +50,7 @@ export default function LibraryPage() {
   // Show loading while auth is initializing
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950">
+      <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[#FF3EDB] animate-spin" />
       </div>
     )
@@ -60,7 +60,7 @@ export default function LibraryPage() {
   if (!isAuthenticated) {
     router.push("/auth/login?redirect=/library")
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950">
+      <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[#FF3EDB] animate-spin" />
       </div>
     )

@@ -16,7 +16,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="Primary"
-      className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-[#0B0D1A]/90 backdrop-blur-xl border-t border-white/10 pb-[env(safe-area-inset-bottom)]"
+      className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-black/35 backdrop-blur-xl border-t border-white/10 pb-[env(safe-area-inset-bottom)]"
     >
       <ul className="grid grid-cols-5">
         {items.map((item) => {
