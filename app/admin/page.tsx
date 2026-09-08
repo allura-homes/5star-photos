@@ -7,7 +7,9 @@ import { useAuthContext } from "@/lib/contexts/auth-context"
 import { getAllJobs } from "@/lib/actions/job-actions"
 import { createClient } from "@/lib/supabase/client"
 import type { Job } from "@/lib/types"
-import { Loader2, Users, ImageIcon, Coins, TrendingUp, Shield, Search, MoreVertical } from "lucide-react"
+import { Loader2, Users, ImageIcon, Coins, TrendingUp, Shield, Search, ExternalLink, SlidersHorizontal } from "lucide-react"
+import { PLANS, type PlanId } from "@/lib/plans"
+import { AdjustCreditsDialog, type AdjustTarget } from "@/components/admin/adjust-credits-dialog"
 
 type UserProfile = {
   id: string
@@ -15,9 +17,18 @@ type UserProfile = {
   display_name: string
   role: string
   tokens: number
+  plan: PlanId
+  plan_credits: number
+  topup_credits: number
+  subscription_status: string | null
+  stripe_customer_id: string | null
   free_previews_used: number
   created_at: string
 }
+
+const STRIPE_DASHBOARD = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith("pk_live")
+  ? "https://dashboard.stripe.com"
+  : "https://dashboard.stripe.com/test"
 
 type Stats = {
   totalUsers: number
@@ -35,8 +46,17 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"overview" | "users" | "jobs">("overview")
   const [searchQuery, setSearchQuery] = useState("")
+  const [adjustTarget, setAdjustTarget] = useState<AdjustTarget | null>(null)
 
   const supabase = createClient()
+
+  const handleAdjusted = (userId: string, newTotal: number) => {
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, tokens: newTotal } : u)))
+    setStats((prev) => ({
+      ...prev,
+      totalTokensUsed: users.reduce((sum, u) => sum + (u.id === userId ? newTotal : u.tokens || 0), 0),
+    }))
+  }
 
   useEffect(() => {
     if (authLoading) return
@@ -104,6 +124,7 @@ export default function AdminPage() {
 
   return (
     <AppShell>
+          <AdjustCreditsDialog target={adjustTarget} onClose={() => setAdjustTarget(null)} onAdjusted={handleAdjusted} />
           <div className="max-w-7xl mx-auto">
             {/* Header */}
             <div className="flex items-center gap-4 mb-8">
@@ -149,7 +170,7 @@ export default function AdminPage() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-white">{stats.totalTokensUsed}</p>
-                    <p className="text-sm text-slate-400">Tokens in Circulation</p>
+                    <p className="text-sm text-slate-400">Credits in Circulation</p>
                   </div>
                 </div>
               </div>
@@ -216,10 +237,12 @@ export default function AdminPage() {
                       <tr className="border-b border-white/10">
                         <th className="text-left text-sm font-medium text-slate-400 px-6 py-4">User</th>
                         <th className="text-left text-sm font-medium text-slate-400 px-6 py-4">Role</th>
-                        <th className="text-left text-sm font-medium text-slate-400 px-6 py-4">Tokens</th>
-                        <th className="text-left text-sm font-medium text-slate-400 px-6 py-4">Free Used</th>
+                        <th className="text-left text-sm font-medium text-slate-400 px-6 py-4">Plan</th>
+                        <th className="text-left text-sm font-medium text-slate-400 px-6 py-4">Credits</th>
                         <th className="text-left text-sm font-medium text-slate-400 px-6 py-4">Joined</th>
-                        <th className="text-left text-sm font-medium text-slate-400 px-6 py-4"></th>
+                        <th className="text-right text-sm font-medium text-slate-400 px-6 py-4">
+                          <span className="sr-only">Actions</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -245,18 +268,56 @@ export default function AdminPage() {
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <span className="text-amber-400 font-medium">{user.tokens}</span>
+                            <div className="flex flex-col gap-1">
+                              <span
+                                className={`inline-flex w-fit px-2 py-1 rounded-full text-xs font-medium ${
+                                  user.plan && user.plan !== "free"
+                                    ? "bg-[#FF3EDB]/15 text-[#FF3EDB]"
+                                    : "bg-slate-500/20 text-slate-400"
+                                }`}
+                              >
+                                {PLANS[user.plan ?? "free"]?.name ?? user.plan}
+                              </span>
+                              {user.subscription_status && user.subscription_status !== "active" && (
+                                <span className="text-xs text-amber-400">{user.subscription_status}</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4">
-                            <span className="text-slate-300">{user.free_previews_used}/3</span>
+                            <span className="text-amber-400 font-medium">{user.tokens}</span>
+                            {user.topup_credits > 0 && (
+                              <span className="block text-xs text-slate-500">
+                                {user.plan_credits} plan + {user.topup_credits} top-up
+                              </span>
+                            )}
                           </td>
                           <td className="px-6 py-4">
                             <span className="text-slate-400">{formatDate(user.created_at)}</span>
                           </td>
                           <td className="px-6 py-4">
-                            <button className="p-2 rounded-lg hover:bg-white/10 transition-colors">
-                              <MoreVertical className="w-4 h-4 text-slate-400" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setAdjustTarget({ id: user.id, email: user.email, total: user.tokens })}
+                                className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                                title="Adjust credits"
+                              >
+                                <SlidersHorizontal className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                                <span className="sr-only">Adjust credits for {user.email}</span>
+                              </button>
+                              {user.stripe_customer_id && (
+                                <a
+                                  href={`${STRIPE_DASHBOARD}/customers/${user.stripe_customer_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                                  title="Open in Stripe"
+                                >
+                                  <ExternalLink className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                                  <span className="sr-only">Open {user.email} in Stripe</span>
+                                </a>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
