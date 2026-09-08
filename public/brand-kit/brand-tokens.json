@@ -1,0 +1,88 @@
+{
+  "brand": "5star.photos",
+  "version": "2026-09-08",
+  "scope": "Current redesigned homepage; print recommendations are not press-approved specifications.",
+  "identity": {
+    "badgeSource": "public/logo.png",
+    "packagedBadge": "5star-current-badge.png",
+    "wordmark": "5star.photos",
+    "wordmarkFont": "Montserrat",
+    "wordmarkWeight": 700,
+    "wordmarkColor": "#FFFFFF",
+    "legacyAssetsExcluded": ["5star-logo-horizontal.png", "5star-logo-stacked.png", "5star-icon.png"]
+  },
+  "typography": {
+    "family": "Montserrat",
+    "websiteWeights": [400, 500, 600, 700, 800],
+    "recommendedPrintWeights": [400, 500, 600, 700],
+    "license": "SIL Open Font License 1.1; see OFL.txt",
+    "fontSource": "https://github.com/google/fonts/tree/main/ofl/montserrat"
+  },
+  "colorSpace": "sRGB HEX; obtain profile-specific CMYK conversions from your printer",
+  "core": {
+    "primaryMagenta": "#FF3EDB",
+    "deepPurple": "#3B0E7A",
+    "violet": "#6A1FBF",
+    "electricBlue": "#2F7BFF",
+    "tealAqua": "#16B2A5"
+  },
+  "neutrals": {
+    "nearBlack": "#05030A",
+    "darkSlate": "#12101E",
+    "midSlate": "#2B2A3A",
+    "softGrey": "#C9CCDA",
+    "offWhite": "#F5F5FB",
+    "headerWhite": "#FFFFFF"
+  },
+  "utility": {
+    "successGreen": "#27D980",
+    "warningAmber": "#FFB341",
+    "errorPink": "#FF4B6B",
+    "homepageHeadlineAmber": {
+      "class": "text-amber-400",
+      "cssColor": "oklch(0.828 0.189 84.429)",
+      "approximateSrgbHex": "#FFB900",
+      "note": "Tailwind v4 amber-400, distinct from the warning-amber token"
+    }
+  },
+  "sectionBackdrops": {
+    "brand": {"glow": "#9B3BE0", "base": "#2C0F66", "deep": "#0D0620"},
+    "library": {"glow": "#2F7BFF", "base": "#13327F", "deep": "#060C24"},
+    "account": {"glow": "#16B2A5", "base": "#0B5C58", "deep": "#041D1C"},
+    "admin": {"glow": "#6B7590", "base": "#2A2F42", "deep": "#0A0C14"}
+  },
+  "gradients": {
+    "homepageBackground": "radial-gradient(115% 85% at 18% 8%, #9B3BE0 0%, transparent 62%), radial-gradient(80% 70% at 88% 92%, color-mix(in oklab, #2C0F66 70%, black) 0%, transparent 65%), linear-gradient(170deg, #2C0F66 0%, #0D0620 100%)",
+    "primaryAction": "linear-gradient(135deg, #FF3EDB 0%, #6A1FBF 100%)",
+    "violetBlue": "linear-gradient(135deg, #6A1FBF 0%, #2F7BFF 100%)",
+    "blueTeal": "linear-gradient(135deg, #2F7BFF 0%, #16B2A5 100%)",
+    "text": "linear-gradient(135deg, #FF3EDB 0%, #2F7BFF 100%)"
+  },
+  "surfaces": {
+    "glass": {"background": "rgba(255,255,255,0.10)", "border": "1px solid rgba(255,255,255,0.15)", "backdropFilter": "blur(40px)"},
+    "strongGlass": {"background": "rgba(255,255,255,0.15)", "border": "1px solid rgba(255,255,255,0.20)", "backdropFilter": "blur(64px)"},
+    "magentaGlow": "0 0 40px rgba(255,62,219,0.5), 0 0 80px rgba(255,62,219,0.3)",
+    "featureCardRadiusPx": 24,
+    "featureCardPaddingPx": 32,
+    "heroPhotoRadiusPx": 16,
+    "secondaryPhotoRadiusPx": 12,
+    "primaryActionShape": "pill"
+  },
+  "recommendedBusinessCard": {
+    "status": "Design concept, not print-ready artwork",
+    "trimInches": [3.5, 2],
+    "bleedPerEdgeInches": 0.125,
+    "documentWithBleedInches": [3.75, 2.25],
+    "minimumSafeInsetInches": 0.125,
+    "conceptSafeInsetInches": 0.2,
+    "rasterPpi": 300,
+    "nameSizePt": 16,
+    "contactSizePt": 9,
+    "frontBackground": "brand gradient",
+    "backBackground": "#0D0620",
+    "accent": "#FF3EDB",
+    "suggestedTagline": "Better photos. Better first impressions.",
+    "profile": "Printer-supplied ICC profile; no universal CMYK or Pantone equivalence claimed"
+  },
+  "sourceFiles": ["app/globals.css", "app/layout.tsx", "components/header.tsx", "app/page.tsx", "public/logo.png"]
+}
