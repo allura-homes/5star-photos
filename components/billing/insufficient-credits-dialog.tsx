@@ -33,7 +33,7 @@ export function InsufficientCreditsDialog({ shortfall, onClose }: InsufficientCr
   const smallestPack = TOPUP_PACKS[0]
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(isOpen: boolean) => !isOpen && onClose()}>
       <DialogContent className="max-w-md bg-[#141830] border-white/10 text-white">
         <DialogHeader>
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[#FF3EDB]/15 text-[#FF3EDB]">

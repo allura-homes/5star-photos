@@ -7,7 +7,10 @@ import Link from "next/link"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { AppShell } from "@/components/app-shell"
 import { getImageById } from "@/lib/actions/image-actions"
-import type { UserImage, EnhancementPreferences, PhotoClassification } from "@/lib/types"
+import { startTransform, finishTransform, getPlanModels } from "@/lib/actions/transform-actions"
+import { InsufficientCreditsDialog, type CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
+import { CREDIT_COSTS } from "@/lib/plans"
+import type { UserImage, EnhancementPreferences, PhotoClassification, ModelProvider } from "@/lib/types"
 import { DEFAULT_ENHANCEMENT_PREFERENCES } from "@/lib/types"
 import { SingleImagePreferencesModal } from "@/components/single-image-preferences-modal"
 import {
@@ -24,24 +27,11 @@ import {
   Settings2,
 } from "lucide-react"
 
-// Model config for batch processing (same as single transform).
-// Provider values must match what the edit-image API expects.
-//   V1 = "openai"          -> gpt-image-1
-//   V2 = "nano_banana_pro" -> gemini-3-pro-image-preview
-//   V4 = "openai_2"        -> gpt-image-2
-//
-// NOTE (2026-07-13): gpt-image-2 is a real OpenAI model, but it can fail with
-// "Failed to fetch" if this project's OpenAI key/org has not been granted
-// access to it (gpt-image-1 works on the same key). When that happens the V4
-// variation fails and only V1/V2 get saved. Access must be enabled in the
-// OpenAI dashboard for the key used by this project. All 4 slots stay enabled.
-const BATCH_MODELS = [
-  { model: "openai", label: "V1" },
-  { model: "nano_banana_pro", label: "V2" },
-  // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
-  // { model: "flux_2_pro", label: "V3" },
-  { model: "openai_2", label: "V4" },
-] as const
+// Which models run is decided server-side per image by startTransform()
+// (lib/constants/models.ts ACTIVE_MODELS filtered by the user's plan).
+// NOTE (2026-07-13): gpt-image-2 (V4) can fail with "Failed to fetch" if this
+// project's OpenAI key/org has not been granted access to it; V1/V2 still save.
+type BatchModel = { model: ModelProvider; label: string }
 
 // Timeouts for different API calls
 const EDIT_IMAGE_TIMEOUT = 200000 // 200s for image generation (can be slow)
@@ -87,12 +77,16 @@ interface BatchImage {
 
 export default function BatchTransformPage() {
   const router = useRouter()
-  const { profile, user } = useAuthContext()
+  const { profile, user, refreshProfile } = useAuthContext()
   const [batchImages, setBatchImages] = useState<BatchImage[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
   const [overallProgress, setOverallProgress] = useState(0)
   const [startTime, setStartTime] = useState<Date | null>(null)
+
+  // Billing: models the plan includes (for the pre-run summary) and any shortfall.
+  const [planModels, setPlanModels] = useState<BatchModel[]>([])
+  const [shortfall, setShortfall] = useState<CreditShortfall | null>(null)
   
   // Custom preferences state
   const [showPreferencesModal, setShowPreferencesModal] = useState(false)
@@ -113,21 +107,19 @@ export default function BatchTransformPage() {
 
   async function loadBatchImages(imageIds: string[]) {
     setIsLoading(true)
-    const loadedImages: BatchImage[] = []
+    const [{ models }, ...loaded] = await Promise.all([getPlanModels(), ...imageIds.map((id) => getImageById(id))])
+    setPlanModels(models)
 
-    for (const id of imageIds) {
-      const { image } = await getImageById(id)
-      loadedImages.push({
-        id,
+    setBatchImages(
+      loaded.map(({ image }, i) => ({
+        id: imageIds[i],
         image,
         status: "pending",
         progress: 0,
         completedVariations: 0,
-        totalVariations: BATCH_MODELS.length,
-      })
-    }
-
-    setBatchImages(loadedImages)
+        totalVariations: models.length,
+      })),
+    )
     setIsLoading(false)
   }
 
@@ -159,6 +151,29 @@ export default function BatchTransformPage() {
     setBatchImages(prev => prev.map((img, i) => 
       i === index ? { ...img, status: "processing", progress: 0 } : img
     ))
+
+    // BILLING: one transform charge per image, taken before any model runs.
+    // The server returns the models this plan may use.
+    const start = await startTransform(batchImage.id)
+    if (!start.ok) {
+      if (start.code === "INSUFFICIENT_CREDITS" || start.code === "PAST_DUE") {
+        setShortfall((current) =>
+          current ?? {
+            required: start.required ?? CREDIT_COSTS.transform,
+            available: start.available ?? 0,
+            plan: start.plan ?? "free",
+            pastDue: start.code === "PAST_DUE",
+          },
+        )
+      }
+      setBatchImages(prev => prev.map((img, i) =>
+        i === index ? { ...img, status: "error", progress: 100, error: start.error } : img
+      ))
+      return false
+    }
+    const transformId = start.transformId
+    const runModels: BatchModel[] = start.models
+    refreshProfile()
 
     // Generate prompt: use art-director if custom preferences, otherwise use default
     let imagePrompt: string
@@ -219,13 +234,14 @@ export default function BatchTransformPage() {
     let variationNumber = 1
     const modelErrors: string[] = []
 
-    for (const modelConfig of BATCH_MODELS) {
+    for (const modelConfig of runModels) {
       try {
         // Call the transform API with correct parameters (matching single transform)
         const response = await fetchWithTimeout("/api/edit-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            transform_id: transformId,
             original_url: batchImage.image.storage_path,
             filename: batchImage.image.original_filename,
             model: modelConfig.model,
@@ -253,6 +269,8 @@ export default function BatchTransformPage() {
                 imageData: imageData,
                 sourceModel: modelConfig.model,
                 transformationPrompt: imagePrompt,
+                // Included in the transform price; do not charge again.
+                autoSave: true,
               }),
             }, SAVE_VARIATION_TIMEOUT)
             
@@ -281,10 +299,17 @@ export default function BatchTransformPage() {
       }
 
       // Update progress for this image
-      const progress = Math.round(((completedCount) / BATCH_MODELS.length) * 100)
+      const progress = Math.round(((completedCount) / runModels.length) * 100)
       setBatchImages(prev => prev.map((img, i) => 
         i === index ? { ...img, progress, completedVariations: completedCount, modelErrors: [...modelErrors] } : img
       ))
+    }
+
+    // Nothing came back: the server verifies success_count === 0 and refunds.
+    let refunded = false
+    if (completedCount === 0) {
+      ;({ refunded } = await finishTransform(transformId))
+      refreshProfile()
     }
 
     // Mark as complete or error
@@ -294,12 +319,18 @@ export default function BatchTransformPage() {
         status: completedCount > 0 ? "complete" : "error",
         progress: 100,
         completedVariations: completedCount,
-        error: completedCount === 0 ? "All transformations failed" : undefined,
+        totalVariations: runModels.length,
+        error:
+          completedCount === 0
+            ? refunded
+              ? "All transformations failed. Credits refunded."
+              : "All transformations failed"
+            : undefined,
       } : img
     ))
 
     return completedCount > 0
-  }, [profile?.id, user?.id, hasCustomPreferences, customPreferences])
+  }, [profile?.id, user?.id, hasCustomPreferences, customPreferences, refreshProfile])
 
   // Update overall progress when individual images complete
   useEffect(() => {
@@ -421,7 +452,7 @@ export default function BatchTransformPage() {
                     ? `${completedCount} images transformed successfully${errorCount > 0 ? `, ${errorCount} failed` : ""}`
                     : isProcessing
                       ? `${completedCount} of ${batchImages.length} complete`
-                      : `Each image will be transformed using ${BATCH_MODELS.length} AI models`}
+                      : `${planModels.length} AI models per image · ${batchImages.length * CREDIT_COSTS.transform} credits total (${CREDIT_COSTS.transform} each)`}
                 </p>
               </div>
             </div>
@@ -489,7 +520,7 @@ export default function BatchTransformPage() {
                 <div className="w-6 h-6 rounded-full bg-fuchsia-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                   <span className="text-xs text-fuchsia-400 font-bold">1</span>
                 </div>
-                <span>Each image will be processed through {BATCH_MODELS.length} AI models simultaneously</span>
+                <span>Each image will be processed through {planModels.length} AI models simultaneously</span>
               </li>
               <li className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-full bg-fuchsia-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -631,7 +662,7 @@ export default function BatchTransformPage() {
             <h3 className="text-xl font-semibold text-white mb-2">All Done!</h3>
             <p className="text-slate-400 mb-6">
               {completedCount} of {batchImages.length} images were successfully transformed.
-              Each image now has up to {BATCH_MODELS.length} AI-enhanced variations.
+              Each image now has up to {planModels.length} AI-enhanced variations.
             </p>
             <div className="flex items-center justify-center gap-4">
               <Link
@@ -659,6 +690,8 @@ export default function BatchTransformPage() {
         imageName={`${batchImages.length} images`}
         initialPreferences={customPreferences || undefined}
       />
+
+      <InsufficientCreditsDialog shortfall={shortfall} onClose={() => setShortfall(null)} />
     </AppShell>
   )
 }

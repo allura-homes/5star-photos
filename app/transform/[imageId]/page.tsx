@@ -6,7 +6,7 @@ import Image from "next/image"
 import { AppShell } from "@/components/app-shell"
 import { toast } from "sonner"
 import { useAuthContext } from "@/lib/contexts/auth-context"
-import { getImageById, transformImage } from "@/lib/actions/image-actions"
+import { getImageById } from "@/lib/actions/image-actions"
 import { startTransform, finishTransform } from "@/lib/actions/transform-actions"
 import { InsufficientCreditsDialog, type CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
 import type { UserImage, ModelProvider, EnhancementPreferences } from "@/lib/types"
@@ -40,6 +40,7 @@ import Link from "next/link"
 import { submitFeedback } from "@/lib/actions/feedback-actions"
 import { SingleImagePreferencesModal } from "@/components/single-image-preferences-modal"
 import { DownloadSelectionModal } from "@/components/download-selection-modal"
+import { modelLabel } from "@/lib/constants/models"
 
 interface PreviewVariation {
   model: ModelProvider
@@ -51,21 +52,8 @@ interface PreviewVariation {
   locked?: boolean
 }
 
-// APPROVED, tested models per MODEL_CONFIGURATION.md (kept in sync with
-// BATCH_MODELS in /app/batch-transform/page.tsx):
-//   V1 = "openai"          -> gpt-image-1
-//   V2 = "nano_banana_pro" -> gemini-3-pro-image-preview
-// DISABLED 2026-07-13: openai_1_5 / openai_2 (gpt-image-1.5 / gpt-image-2)
-// were failing with "Failed to fetch" - those model names are not reachable.
-const MODEL_CONFIG: { model: ModelProvider; label: string }[] = [
-  { model: "openai", label: "V1" },
-  { model: "nano_banana_pro", label: "V2" },
-  // DEPRECATED 2026-05-15: flux_2_pro (V3) - fal.ai billing issues
-  // { model: "flux_2_pro", label: "V3" },
-  // RE-ENABLED 2026-07-13 by user request: openai_2 (V4/gpt-image-2).
-  // May still fail fast with "Failed to fetch" if not reachable.
-  { model: "openai_2", label: "V4" },
-]
+// Which models run is decided server-side by startTransform() from
+// lib/constants/models.ts (ACTIVE_MODELS) and the user's plan (lib/plans.ts).
 
 /** Turn an /api/edit-image failure into a sentence a host can act on. */
 async function friendlyModelError(response: Response): Promise<string> {
@@ -837,7 +825,7 @@ export default function TransformPage() {
                           // Load this variation into the preview
                           setPreviews([{
                             model: (variation.source_model as ModelProvider) || "openai",
-                            modelLabel: MODEL_CONFIG.find(m => m.model === variation.source_model)?.label || variation.source_model || "Saved",
+                            modelLabel: variation.source_model ? modelLabel(variation.source_model) : "Saved",
                             preview_url: variation.storage_path,
                             is_loading: false,
                           }])
@@ -859,7 +847,7 @@ export default function TransformPage() {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         {variation.source_model && (
                           <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-xs backdrop-blur-sm">
-                            {MODEL_CONFIG.find(m => m.model === variation.source_model)?.label || variation.source_model}
+                            {modelLabel(variation.source_model)}
                           </div>
                         )}
                         <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -968,11 +956,11 @@ export default function TransformPage() {
                   {compareVariations.slice(0, 3).map((variation) => (
                     <div key={variation.id} className="relative rounded-xl overflow-hidden border border-white/10 shadow-2xl ring-2 ring-[#FF3EDB]/50">
                       <div className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-lg bg-[#FF3EDB] text-white text-xs font-bold shadow-lg">
-                        {MODEL_CONFIG.find(m => m.model === variation.source_model)?.label || variation.source_model}
+                        {modelLabel(variation.source_model)}
                       </div>
                       <Image
                         src={variation.storage_path || "/placeholder.svg"}
-                        alt={MODEL_CONFIG.find(m => m.model === variation.source_model)?.label || "Variation"}
+                        alt={variation.source_model ? modelLabel(variation.source_model) : "Variation"}
                         fill
                         className="object-contain bg-black/50"
                         priority
@@ -1052,13 +1040,16 @@ export default function TransformPage() {
           isOpen={showDownloadModal}
           onClose={() => setShowDownloadModal(false)}
           originalFilename={image.original_filename}
+          imageId={image.id}
+          onShortfall={setShortfall}
+          onCreditsSpent={refreshProfile}
           preSelectedId={selectedPreview ? `preview-${selectedPreviewIndex}` : undefined}
           variations={[
             // Current previews (unsaved)
             ...previews
               .filter(p => p.preview_url)
               .map((p, i) => {
-                const modelConfig = MODEL_CONFIG.find(m => m.model === p.model)
+                const modelConfig = { label: modelLabel(p.model) }
                 return {
                   id: `preview-${i}`,
                   preview_url: p.preview_url!,
@@ -1070,7 +1061,7 @@ export default function TransformPage() {
             ...(image.variations || [])
               .filter(v => v.storage_path)
               .map(v => {
-                const modelConfig = MODEL_CONFIG.find(m => m.model === v.source_model)
+                const modelConfig = { label: modelLabel(v.source_model) }
                 return {
                   id: v.id,
                   preview_url: v.storage_path,

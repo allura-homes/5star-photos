@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { X, Download, Check, Loader2, CheckCircle2 } from "lucide-react"
+import { X, Download, Check, Loader2, CheckCircle2, Coins } from "lucide-react"
+import { toast } from "sonner"
+import { CREDIT_COSTS } from "@/lib/plans"
+import type { CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
 
 interface DownloadableVariation {
   id: string
@@ -17,7 +20,15 @@ interface DownloadSelectionModalProps {
   variations: DownloadableVariation[]
   originalFilename: string
   preSelectedId?: string // ID of the variation to pre-select (currently being viewed)
+  /** Optional: the image these variations belong to, for the credit ledger. */
+  imageId?: string
+  /** Called when the server refuses a download for lack of credits. */
+  onShortfall?: (shortfall: CreditShortfall) => void
+  /** Called after any successful paid download so the header balance refreshes. */
+  onCreditsSpent?: () => void
 }
+
+const DOWNLOAD_COST = CREDIT_COSTS.download_hires
 
 export function DownloadSelectionModal({
   isOpen,
@@ -25,6 +36,9 @@ export function DownloadSelectionModal({
   variations,
   originalFilename,
   preSelectedId,
+  imageId,
+  onShortfall,
+  onCreditsSpent,
 }: DownloadSelectionModalProps) {
   // Filter out variations without valid URLs
   const validVariations = variations.filter(v => v.preview_url && v.preview_url.length > 0)
@@ -71,39 +85,49 @@ export function DownloadSelectionModal({
     setSelectedIds(new Set())
   }
 
-  const downloadImage = async (variation: DownloadableVariation): Promise<boolean> => {
+  type DownloadOutcome = "ok" | "error" | "shortfall"
+
+  const downloadImage = async (variation: DownloadableVariation): Promise<DownloadOutcome> => {
     try {
       // Validate the URL exists
       if (!variation.preview_url) {
         console.error("Download error: No preview URL for variation", variation.id)
-        return false
+        return "error"
       }
-      
-      // First, upscale the image for hi-res download
-      let downloadUrl = variation.preview_url
-      try {
-        const upscaleResponse = await fetch("/api/upscale", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            imageUrl: variation.preview_url,
-            scale: 2, // 2x upscale for hi-res
-          }),
+
+      // BILLING: /api/upscale charges the download and returns the clean
+      // hi-res URL. There is deliberately no fallback to the watermarked
+      // preview, otherwise a failed charge would still hand out the file.
+      const upscaleResponse = await fetch("/api/upscale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: variation.preview_url,
+          scale: 2,
+          imageId,
+        }),
+      })
+
+      if (upscaleResponse.status === 402) {
+        const body = await upscaleResponse.json().catch(() => ({}))
+        onShortfall?.({
+          required: body.required ?? DOWNLOAD_COST,
+          available: body.available ?? 0,
+          plan: body.plan ?? "free",
+          pastDue: body.code === "PAST_DUE",
         })
-        
-        if (upscaleResponse.ok) {
-          const upscaleResult = await upscaleResponse.json()
-          if (upscaleResult.url) {
-            downloadUrl = upscaleResult.url
-            console.log("[v0] Using upscaled image for download")
-          }
-        }
-      } catch (upscaleError) {
-        console.warn("[v0] Upscale failed, using original:", upscaleError)
-        // Continue with original URL
+        return "shortfall"
       }
-      
-      // Fetch the (potentially upscaled) image
+
+      if (!upscaleResponse.ok) {
+        const body = await upscaleResponse.json().catch(() => ({}))
+        toast.error(typeof body.error === "string" ? body.error : "We couldn't prepare this download.")
+        return "error"
+      }
+
+      const { url: downloadUrl } = (await upscaleResponse.json()) as { url?: string }
+      if (!downloadUrl) return "error"
+
       const response = await fetch(downloadUrl)
       if (!response.ok) throw new Error("Failed to fetch image")
       
@@ -146,11 +170,11 @@ export function DownloadSelectionModal({
       link.click()
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
-      
-      return true
+
+      return "ok"
     } catch (error) {
       console.error("Download error:", error)
-      return false
+      return "error"
     }
   }
 
@@ -167,27 +191,44 @@ export function DownloadSelectionModal({
     })
     setDownloadProgress(initialProgress)
     
-    // Download sequentially with delay between each
+    // Download sequentially with delay between each. Each file is charged
+    // separately, so a shortfall mid-batch stops the loop without touching
+    // files that already completed.
+    let anyPaid = false
+    let stoppedForCredits = false
     for (const variation of selectedVariations) {
       setCurrentDownload(variation.id)
       setDownloadProgress(prev => ({ ...prev, [variation.id]: "downloading" }))
-      
-      const success = await downloadImage(variation)
-      
-      setDownloadProgress(prev => ({ 
-        ...prev, 
-        [variation.id]: success ? "complete" : "error" 
+
+      const outcome = await downloadImage(variation)
+      if (outcome === "ok") anyPaid = true
+
+      setDownloadProgress(prev => ({
+        ...prev,
+        [variation.id]: outcome === "ok" ? "complete" : "error",
       }))
-      
+
+      if (outcome === "shortfall") {
+        stoppedForCredits = true
+        break
+      }
+
       // Small delay between downloads to prevent browser issues
       if (selectedVariations.indexOf(variation) < selectedVariations.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 800))
       }
     }
-    
+
     setCurrentDownload(null)
     setIsDownloading(false)
-    
+    if (anyPaid) onCreditsSpent?.()
+
+    if (stoppedForCredits) {
+      onClose()
+      setDownloadProgress({})
+      return
+    }
+
     // Close modal after brief delay to show completion
     setTimeout(() => {
       onClose()
@@ -196,6 +237,7 @@ export function DownloadSelectionModal({
   }
 
   const completedCount = Object.values(downloadProgress).filter(s => s === "complete").length
+  const totalCost = selectedIds.size * DOWNLOAD_COST
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -340,9 +382,14 @@ export function DownloadSelectionModal({
               </div>
             ) : (
               <>
-                <p className="text-sm text-slate-400">
-                  High-resolution images without watermarks
+                <p className="flex items-center gap-2 text-sm text-slate-400">
+                  <Coins className="size-4 text-amber-400" aria-hidden="true" />
+                  <span>
+                    {DOWNLOAD_COST} credits each
+                    {selectedIds.size > 1 ? ` · ${totalCost} total` : ""}
+                  </span>
                 </p>
+                <p className="text-xs text-slate-500">High-resolution, no watermark</p>
                 {/* Format toggle */}
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-500">Format:</span>

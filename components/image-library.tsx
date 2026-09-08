@@ -8,7 +8,8 @@ import { getUserImages, deleteImage, deleteImages, updateImageClassification, up
 import { prepareImageForUpload } from "@/lib/compress-image"
 import { getUserProjects, assignImagesToProject } from "@/lib/actions/project-actions"
 import type { UserImage, PhotoClassification, Project } from "@/lib/types"
-import { TOKEN_COSTS, TOKENS_ENFORCED } from "@/lib/constants/tokens"
+import { CREDIT_COSTS } from "@/lib/plans"
+import { InsufficientCreditsDialog, type CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
 import { FirstRunGuide } from "@/components/first-run-guide"
 import { toast } from "sonner"
 import { v4 as uuidv4 } from "uuid"
@@ -95,8 +96,9 @@ function classifyFromFilename(filename: string): PhotoClassification {
 
 export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, setTokenBalance = () => {} }: ImageLibraryProps) {
   const router = useRouter()
-  const { isAuthenticated, isLoading: authLoading, user } = useAuthContext()
+  const { isAuthenticated, isLoading: authLoading, user, profile, refreshProfile } = useAuthContext()
   const [images, setImages] = useState<UserImage[]>([])
+  const [shortfall, setShortfall] = useState<CreditShortfall | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [expandedImages, setExpandedImages] = useState<Set<string>>(new Set())
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
@@ -225,16 +227,19 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
 
   async function handleUploadAll() {
     const pendingCount = pendingUploads.filter((u) => u.status === "pending").length
-    const cost = pendingCount * TOKEN_COSTS.upload
-    if (TOKENS_ENFORCED && cost > tokenBalance) {
-      toast.error(`You need ${cost} tokens for this upload but have ${tokenBalance}.`)
+    const cost = pendingCount * CREDIT_COSTS.upload
+    // BILLING: quick client-side check; the server action re-checks and
+    // charges per file, and a 402-style result stops the loop.
+    if (cost > tokenBalance) {
+      setShortfall({ required: cost, available: tokenBalance, plan: profile?.plan ?? "free" })
       return
     }
 
     setIsUploading(true)
+    let stoppedForCredits = false
 
     for (const upload of pendingUploads) {
-      if (upload.status !== "pending") continue
+      if (upload.status !== "pending" || stoppedForCredits) continue
 
       setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "uploading" } : u)))
 
@@ -242,13 +247,24 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
         // Shrinks anything over the upload budget so it fits the server-action body limit
         const base64 = await prepareImageForUpload(upload.file)
 
-        const { error } = await uploadImage(base64, upload.file.name, "image/jpeg", upload.classification)
+        const result = await uploadImage(base64, upload.file.name, "image/jpeg", upload.classification)
 
-        if (error) {
-          setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "error", error } : u)))
+        if (result.code === "INSUFFICIENT_CREDITS" || result.code === "PAST_DUE") {
+          stoppedForCredits = true
+          setShortfall({
+            required: result.required ?? CREDIT_COSTS.upload,
+            available: result.available ?? 0,
+            plan: result.plan ?? profile?.plan ?? "free",
+            pastDue: result.code === "PAST_DUE",
+          })
+          setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "pending" } : u)))
+        } else if (result.error) {
+          setPendingUploads((prev) =>
+            prev.map((u) => (u.id === upload.id ? { ...u, status: "error", error: result.error } : u)),
+          )
         } else {
           setPendingUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "done" } : u)))
-          setTokenBalance((prev) => Math.max(0, prev - 1))
+          setTokenBalance((prev) => Math.max(0, prev - CREDIT_COSTS.upload))
         }
       } catch (err) {
         setPendingUploads((prev) =>
@@ -258,6 +274,8 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     }
 
     setIsUploading(false)
+    refreshProfile()
+    if (stoppedForCredits) return
     setTimeout(() => {
       setPendingUploads((current) => {
         const failed = current.filter((u) => u.status === "error").length
@@ -460,8 +478,8 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
 
   if (images.length === 0) {
     const pendingCount = pendingUploads.filter((u) => u.status === "pending").length
-    const uploadCost = pendingCount * TOKEN_COSTS.upload
-    const hasInsufficientTokens = TOKENS_ENFORCED && uploadCost > tokenBalance
+    const uploadCost = pendingCount * CREDIT_COSTS.upload
+    const hasInsufficientTokens = uploadCost > tokenBalance
 
     return (
       <div className="flex flex-col gap-8">
@@ -482,7 +500,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
           <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragActive ? "text-[#FF3EDB]" : "text-slate-500"}`} />
           <p className="text-white font-medium mb-2">{isDragActive ? "Drop photos here" : "Drag & drop photos here"}</p>
           <p className="text-slate-400 text-sm mb-2">or click to browse (JPG, PNG, WebP, HEIC up to 50MB each)</p>
-          {!TOKENS_ENFORCED && <p className="text-emerald-400 text-sm">Free during beta</p>}
+          <p className="text-slate-500 text-sm">{CREDIT_COSTS.upload} credit per photo</p>
         </div>
 
         {pendingUploads.length > 0 && (
@@ -563,17 +581,18 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
             {hasInsufficientTokens ? (
               <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-center">
                 <AlertTriangle className="w-6 h-6 text-red-400 mx-auto mb-2" />
-                <p className="text-white font-medium mb-1">Insufficient Tokens</p>
+                <p className="text-white font-medium mb-1">Not enough credits</p>
                 <p className="text-slate-400 text-sm mb-3">
-                  You need {uploadCost} tokens but only have {tokenBalance}. Remove {pendingCount - tokenBalance}{" "}
-                  photo(s) or buy more tokens.
+                  You need {uploadCost} credit{uploadCost !== 1 ? "s" : ""} but have {tokenBalance}. Remove{" "}
+                  {pendingCount - tokenBalance} photo{pendingCount - tokenBalance !== 1 ? "s" : ""} or add credits.
                 </p>
-                <a
-                  href="mailto:support@5star.photos?subject=Purchase%20Tokens"
+                <button
+                  type="button"
+                  onClick={() => setShortfall({ required: uploadCost, available: tokenBalance, plan: profile?.plan ?? "free" })}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors text-sm font-medium"
                 >
-                  Contact to Buy Tokens
-                </a>
+                  Get more credits
+                </button>
               </div>
             ) : (
               <button
@@ -587,9 +606,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
                     Uploading...
                   </span>
                 ) : (
-                  TOKENS_ENFORCED
-                    ? `Upload ${pendingCount} Photo${pendingCount !== 1 ? "s" : ""} (${uploadCost} token${uploadCost !== 1 ? "s" : ""})`
-                    : `Upload ${pendingCount} Photo${pendingCount !== 1 ? "s" : ""}`
+                  `Upload ${pendingCount} Photo${pendingCount !== 1 ? "s" : ""} (${uploadCost} credit${uploadCost !== 1 ? "s" : ""})`
                 )}
               </button>
             )}

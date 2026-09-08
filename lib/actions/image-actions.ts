@@ -1,13 +1,9 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import type { UserImage, PhotoClassification, EnhancementPreferences } from "@/lib/types"
-import {
-  deductTokensForUpload,
-  deductTokensForTransform,
-  deductTokensForSaveVariation,
-  deductTokensForDownload,
-} from "@/lib/actions/token-actions"
+import type { UserImage, PhotoClassification } from "@/lib/types"
+import { chargeForAction } from "@/lib/credits"
+import { CREDIT_COSTS, type PlanId } from "@/lib/plans"
 
 // Safe revalidation helper - revalidatePath doesn't work in v0 preview
 function safeRevalidate(_path: string) {
@@ -117,47 +113,7 @@ export async function getImageById(imageId: string): Promise<{ image: UserImage 
   }
 }
 
-// Transform a single image - generates preview variations
-export async function transformImage(
-  imageId: string,
-  preferences: EnhancementPreferences,
-): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session?.user) {
-    return { success: false, error: "Not authenticated" }
-  }
-  const user = session.user
-
-  // Get the image
-  const { data: image } = await supabase.from("images").select("*").eq("id", imageId).eq("user_id", user.id).single()
-
-  if (!image) {
-    return { success: false, error: "Image not found" }
-  }
-
-  // Check if this image has been transformed before (first transform is free)
-  const { count } = await supabase
-    .from("token_transactions")
-    .select("*", { count: "exact", head: true })
-    .eq("image_id", imageId)
-    .in("type", ["revision", "transform"])
-
-  const isFirstTransform = (count || 0) === 0
-
-  // Token handling is centralised in token-actions and gated by TOKENS_ENFORCED.
-  const result = await deductTokensForTransform(imageId, image.original_filename, isFirstTransform)
-  if (!result.success) {
-    return { success: false, error: result.error }
-  }
-
-  // The actual transformation happens via the API route which is called client-side
-  // This function just handles the token logic
-  return { success: true }
-}
+// Transform charging lives in lib/actions/transform-actions.ts (startTransform).
 
 async function uploadToStorage(base64Data: string, storagePath: string, contentType: string): Promise<string> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -264,7 +220,14 @@ export async function uploadImage(
   fileType: string,
   classification: PhotoClassification,
   projectId?: string | null,
-): Promise<{ image: UserImage | null; error?: string }> {
+): Promise<{
+  image: UserImage | null
+  error?: string
+  code?: "INSUFFICIENT_CREDITS" | "PAST_DUE"
+  required?: number
+  available?: number
+  plan?: PlanId
+}> {
   const supabase = await createClient()
 
   const {
@@ -312,13 +275,22 @@ export async function uploadImage(
       return { image: null, error: error.message }
     }
 
-    // Token handling is centralised in token-actions and gated by TOKENS_ENFORCED.
-    // The record is created first so a token failure never orphans the upload;
-    // when enforcement is on, a rejected deduction removes the record again.
-    const tokenResult = await deductTokensForUpload(image.id, fileName)
-    if (!tokenResult.success) {
+    // BILLING: the record is created first so a failed charge never orphans
+    // the storage object; a rejected charge removes the record again.
+    const charge = await chargeForAction(user.id, "upload", {
+      description: `Uploaded ${fileName}`,
+      imageId: image.id,
+    })
+    if (!charge.ok) {
       await supabase.from("images").delete().eq("id", image.id).eq("user_id", user.id)
-      return { image: null, error: tokenResult.error }
+      return {
+        image: null,
+        error: charge.code === "past_due" ? "Your last payment failed." : "You're out of credits.",
+        code: charge.code === "past_due" ? "PAST_DUE" : "INSUFFICIENT_CREDITS",
+        required: CREDIT_COSTS.upload,
+        available: charge.total,
+        plan: charge.plan,
+      }
     }
 
     safeRevalidate("/library")
@@ -441,8 +413,14 @@ export async function saveVariation(
     return { image: null, error: error.message }
   }
 
-  // Token handling is centralised in token-actions and gated by TOKENS_ENFORCED.
-  await deductTokensForSaveVariation(image.id, parentImage.original_filename, sourceModel ?? "unknown")
+  const charge = await chargeForAction(user.id, "save_variation", {
+    description: `Saved working image from ${parentImage.original_filename}`,
+    imageId: image.id,
+  })
+  if (!charge.ok) {
+    await supabase.from("images").delete().eq("id", image.id).eq("user_id", user.id)
+    return { image: null, error: "You're out of credits." }
+  }
 
   safeRevalidate("/library")
   return { image: image as UserImage }
@@ -523,36 +501,4 @@ export async function deleteImages(imageIds: string[]): Promise<{ success: boole
   return { success: true, deletedCount: count || 0 }
 }
 
-// Record a download transaction (4 tokens)
-export async function recordDownload(
-  imageId: string,
-): Promise<{ success: boolean; downloadUrl?: string; error?: string }> {
-  const supabase = await createClient()
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session?.user) {
-    return { success: false, error: "Not authenticated" }
-  }
-  const user = session.user
-
-  // Get image info
-  const { data: image } = await supabase.from("images").select("*").eq("id", imageId).eq("user_id", user.id).single()
-
-  if (!image) {
-    return { success: false, error: "Image not found" }
-  }
-
-  // Token handling is centralised in token-actions and gated by TOKENS_ENFORCED.
-  const result = await deductTokensForDownload(imageId, image.original_filename)
-  if (!result.success) {
-    return { success: false, error: result.error }
-  }
-
-  // Generate signed URL for download
-  const { data: signedUrl } = await supabase.storage.from("original-uploads").createSignedUrl(image.storage_path, 3600) // 1 hour expiry
-
-  safeRevalidate("/library")
-  return { success: true, downloadUrl: signedUrl?.signedUrl }
-}
+// Hi-res download charging lives in app/api/upscale/route.ts.

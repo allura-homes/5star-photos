@@ -7,18 +7,23 @@ import { ACTIVE_MODELS } from "@/lib/constants/models"
 import { CREDIT_COSTS, planAllowsModel, PLANS, type PlanId } from "@/lib/plans"
 import type { ModelProvider } from "@/lib/types"
 
-export interface StartTransformResult {
-  ok: boolean
-  transformId?: string
-  models?: { model: ModelProvider; label: string }[]
-  lockedModels?: { model: ModelProvider; label: string }[]
-  plan?: PlanId
-  creditsRemaining?: number
-  error?: string
-  code?: "INSUFFICIENT_CREDITS" | "PAST_DUE" | "NOT_AUTHENTICATED" | "NOT_FOUND"
-  required?: number
-  available?: number
-}
+export type StartTransformResult =
+  | {
+      ok: true
+      transformId: string
+      models: { model: ModelProvider; label: string }[]
+      lockedModels: { model: ModelProvider; label: string }[]
+      plan: PlanId
+      creditsRemaining: number
+    }
+  | {
+      ok: false
+      error: string
+      code: "INSUFFICIENT_CREDITS" | "PAST_DUE" | "NOT_AUTHENTICATED" | "NOT_FOUND" | "START_FAILED"
+      plan?: PlanId
+      required?: number
+      available?: number
+    }
 
 async function sessionUser() {
   const supabase = await createClient()
@@ -78,7 +83,7 @@ export async function startTransform(imageId: string): Promise<StartTransformRes
 
   if (error || !chargeRow) {
     await refundCredits(user.id, CREDIT_COSTS.transform, { description: "Refund: transform could not start", imageId })
-    return { ok: false, error: "Could not start the transform. Your credits were not charged." }
+    return { ok: false, error: "Could not start the transform. Your credits were not charged.", code: "START_FAILED" }
   }
 
   return {

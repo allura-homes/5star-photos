@@ -95,7 +95,7 @@ create or replace function public.spend_credits(
   p_image_id uuid default null,
   p_job_id uuid default null
 )
-returns table (ok boolean, plan_credits integer, topup_credits integer, code text)
+returns table (ok boolean, plan_credits integer, topup_credits integer, code text, plan text)
 language plpgsql
 security definer
 set search_path = public
@@ -110,7 +110,7 @@ declare
 begin
   -- Callers may only spend for themselves unless running as service role.
   if auth.uid() is not null and auth.uid() <> p_user then
-    return query select false, 0, 0, 'forbidden'::text;
+    return query select false, 0, 0, 'forbidden'::text, 'free'::text;
     return;
   end if;
 
@@ -121,7 +121,7 @@ begin
   for update;
 
   if not found then
-    return query select false, 0, 0, 'no_profile'::text;
+    return query select false, 0, 0, 'no_profile'::text, 'free'::text;
     return;
   end if;
 
@@ -137,12 +137,12 @@ begin
     insert into public.token_transactions (user_id, type, amount, description, image_id, job_id, balance_after)
     values (p_user, p_type, -p_amount, p_description, p_image_id, p_job_id, v_plan_credits + v_topup_credits);
 
-    return query select true, v_plan_credits, v_topup_credits, 'ok'::text;
+    return query select true, v_plan_credits, v_topup_credits, 'ok'::text, v_plan;
     return;
   end if;
 
   if v_status = 'past_due' or v_status = 'unpaid' then
-    return query select false, v_plan_credits, v_topup_credits, 'past_due'::text;
+    return query select false, v_plan_credits, v_topup_credits, 'past_due'::text, v_plan;
     return;
   end if;
 
@@ -152,7 +152,7 @@ begin
   end if;
 
   if v_plan_credits + v_topup_credits < p_amount then
-    return query select false, v_plan_credits, v_topup_credits, 'insufficient'::text;
+    return query select false, v_plan_credits, v_topup_credits, 'insufficient'::text, v_plan;
     return;
   end if;
 
@@ -170,7 +170,7 @@ begin
   insert into public.token_transactions (user_id, type, amount, description, image_id, job_id, balance_after)
   values (p_user, p_type, -p_amount, p_description, p_image_id, p_job_id, v_plan_credits + v_topup_credits);
 
-  return query select true, v_plan_credits, v_topup_credits, 'ok'::text;
+  return query select true, v_plan_credits, v_topup_credits, 'ok'::text, v_plan;
 end;
 $$;
 

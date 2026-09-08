@@ -69,7 +69,7 @@ export const PLANS: Record<PlanId, Plan> = {
     highlights: [
       "270 credits per month",
       "About 18 finished photos",
-      "All 4 AI models, side by side",
+      "Every AI model, side by side",
       "Best per-credit value for most agents",
     ],
   },
@@ -82,7 +82,7 @@ export const PLANS: Record<PlanId, Plan> = {
     monthlyCredits: 570,
     models: [],
     allModels: true,
-    highlights: ["570 credits per month", "About 38 finished photos", "All 4 AI models, side by side", "Lowest cost per credit"],
+    highlights: ["570 credits per month", "About 38 finished photos", "Every AI model, side by side", "Lowest cost per credit"],
   },
 }
 
@@ -113,6 +113,10 @@ export function isPaidPlanId(value: unknown): value is PaidPlanId {
 
 export function isBillingInterval(value: unknown): value is BillingInterval {
   return value === "month" || value === "year"
+}
+
+export function isSubscribed(plan: PlanId): plan is PaidPlanId {
+  return plan !== "free"
 }
 
 export function getTopupPack(id: string): TopupPack | undefined {

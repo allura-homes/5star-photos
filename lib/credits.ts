@@ -11,6 +11,7 @@ export interface SpendResult {
   planCredits: number
   topupCredits: number
   total: number
+  plan: PlanId
 }
 
 export interface CreditBalance {
@@ -64,6 +65,8 @@ interface SpendOptions {
   description?: string
   imageId?: string | null
   jobId?: string | null
+  /** Override the default CREDIT_COSTS price (e.g. download + upscale bundled). */
+  amount?: number
 }
 
 // Atomically debits credits (plan first, then top-up) and writes the ledger row.
@@ -88,16 +91,24 @@ export async function spendCredits(
 
   if (error || !data || data.length === 0) {
     console.error("[credits] spend_credits failed:", error?.message)
-    return { ok: false, code: "no_profile", planCredits: 0, topupCredits: 0, total: 0 }
+    return { ok: false, code: "no_profile", planCredits: 0, topupCredits: 0, total: 0, plan: "free" }
   }
 
-  const row = data[0] as { ok: boolean; plan_credits: number; topup_credits: number; code: SpendCode }
+  const row = data[0] as {
+    ok: boolean
+    plan_credits: number
+    topup_credits: number
+    code: SpendCode
+    plan: string
+  }
+  const plan: PlanId = isPlanId(row.plan) ? row.plan : "free"
   return {
     ok: row.ok,
     code: row.code,
     planCredits: row.plan_credits,
     topupCredits: row.topup_credits,
-    total: row.plan_credits + row.topup_credits,
+    total: row.plan_credits + (plan === "free" ? 0 : row.topup_credits),
+    plan,
   }
 }
 
@@ -106,7 +117,7 @@ export async function chargeForAction(
   action: CreditAction,
   options: SpendOptions = {},
 ): Promise<SpendResult> {
-  return spendCredits(userId, CREDIT_COSTS[action], action, options)
+  return spendCredits(userId, options.amount ?? CREDIT_COSTS[action], action, options)
 }
 
 export async function refundCredits(userId: string, amount: number, options: SpendOptions = {}): Promise<SpendResult> {
@@ -166,5 +177,6 @@ export function insufficientCreditsResponse(result: SpendResult, action: CreditA
     code: result.code === "past_due" ? "PAST_DUE" : "INSUFFICIENT_CREDITS",
     required: CREDIT_COSTS[action],
     available: result.total,
+    plan: result.plan,
   }
 }
