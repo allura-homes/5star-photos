@@ -5,7 +5,8 @@ import { Coins, Images, Layers, Shield, ArrowRight } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import { getAccountSummary } from "@/lib/actions/account-actions"
 import { getTokenHistory } from "@/lib/actions/token-actions"
-import { TOKENS_ENFORCED } from "@/lib/constants/tokens"
+import { getBalance } from "@/lib/credits"
+import { BillingSection } from "@/components/billing/billing-section"
 import { DisplayNameForm } from "@/components/account/display-name-form"
 import { SignOutButton } from "@/components/account/sign-out-button"
 import { TransactionList } from "@/components/account/transaction-list"
@@ -18,6 +19,8 @@ export default async function AccountPage() {
   const [{ account }, { transactions }] = await Promise.all([getAccountSummary(), getTokenHistory(25)])
 
   if (!account) redirect("/auth/login?redirect=/account")
+
+  const balance = await getBalance(account.id)
 
   const joined = new Date(account.created_at).toLocaleDateString("en-US", {
     month: "long",
@@ -38,13 +41,10 @@ export default async function AccountPage() {
           </h2>
           <StatCard icon={Images} label="Photos" value={account.image_count} />
           <StatCard icon={Layers} label="Saved variations" value={account.saved_variation_count} />
-          <StatCard
-            icon={Coins}
-            label={TOKENS_ENFORCED ? "Token balance" : "Tokens (free beta)"}
-            value={TOKENS_ENFORCED ? account.tokens : "Unlimited"}
-            tone="amber"
-          />
+          <StatCard icon={Coins} label="Credits available" value={balance?.total ?? account.tokens} tone="amber" />
         </section>
+
+        {balance && <BillingSection balance={balance} />}
 
         <section aria-labelledby="profile" className="glass-card rounded-2xl p-6 flex flex-col gap-6">
           <div className="flex items-start justify-between gap-4">

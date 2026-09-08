@@ -10,7 +10,7 @@ import { useAuthContext } from "@/lib/contexts/auth-context"
 import type { UserImage } from "@/lib/types"
 import { Loader2, Upload, Images, Coins, FolderOpen, Home } from "lucide-react"
 import { AirbnbImportModal } from "@/components/airbnb-import-modal"
-import { TOKENS_ENFORCED } from "@/lib/constants/tokens"
+import Link from "next/link"
 
 export default function LibraryPage() {
   const router = useRouter()
@@ -82,13 +82,15 @@ export default function LibraryPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {TOKENS_ENFORCED && (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10">
-                <Coins className="w-4 h-4 text-amber-400" />
-                <span className="text-white font-medium">{profile?.tokens || 0}</span>
-                <span className="text-slate-400 text-sm">tokens</span>
-              </div>
-            )}
+            <Link
+              href={profile?.plan === "free" || !profile ? "/pricing" : "/account"}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+              title="Credits available"
+            >
+              <Coins className="w-4 h-4 text-amber-400" aria-hidden="true" />
+              <span className="text-white font-medium">{profile?.tokens || 0}</span>
+              <span className="text-slate-400 text-sm">credits</span>
+            </Link>
 
             {activeTab === "photos" && (
               <div className="flex items-center gap-2">

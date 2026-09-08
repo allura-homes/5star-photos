@@ -3,7 +3,7 @@ import Link from "next/link"
 import { Upload, Wand2, Download, Coins, Camera, HelpCircle, ArrowRight } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import { ACTIVE_MODELS } from "@/lib/constants/models"
-import { TOKEN_COSTS, TOKENS_ENFORCED } from "@/lib/constants/tokens"
+import { CREDIT_COSTS, WELCOME_CREDITS } from "@/lib/plans"
 
 export const metadata: Metadata = {
   title: "Help - 5star.photos",
@@ -125,34 +125,36 @@ export default function HelpPage() {
           <div className="flex items-center gap-3">
             <Coins className="w-5 h-5 text-amber-300" aria-hidden="true" />
             <h2 id="tokens" className="text-xl font-semibold text-white">
-              Tokens
+              Credits
             </h2>
           </div>
-          {!TOKENS_ENFORCED ? (
-            <p className="text-slate-400 text-pretty">
-              During the free beta nothing costs tokens. Upload, transform, save and download as much as you like. The
-              table below shows what each action will cost once billing is switched on, so there are no surprises.
-            </p>
-          ) : (
-            <p className="text-slate-400 text-pretty">
-              Tokens are spent when you perform the actions below. Your current balance is always shown in the header.
-            </p>
-          )}
+          <p className="text-slate-400 text-pretty">
+            Every new account starts with {WELCOME_CREDITS} welcome credits. Credits are spent on the actions below and
+            your balance is always shown in the header. Plans refill credits monthly; top-up packs add more whenever you
+            need them.
+          </p>
           <dl className="glass-card rounded-2xl divide-y divide-white/10">
             {[
-              ["Upload a photo", TOKEN_COSTS.upload],
-              ["Transform (first run is free)", TOKEN_COSTS.transform],
-              ["Save a variation", TOKEN_COSTS.save_variation],
-              ["Download hi-res", TOKEN_COSTS.download_hires],
+              ["Upload a photo", CREDIT_COSTS.upload],
+              ["Transform (all models in your plan)", CREDIT_COSTS.transform],
+              ["Save a variation as a working image", CREDIT_COSTS.save_variation],
+              ["Download hi-res", CREDIT_COSTS.download_hires],
             ].map(([label, cost]) => (
               <div key={String(label)} className="flex items-center justify-between px-5 py-3">
                 <dt className="text-sm text-slate-300">{label}</dt>
                 <dd className="text-sm font-medium text-white">
-                  {cost} {cost === 1 ? "token" : "tokens"}
+                  {cost} {cost === 1 ? "credit" : "credits"}
                 </dd>
               </div>
             ))}
           </dl>
+          <Link
+            href="/pricing"
+            className="self-start inline-flex items-center gap-2 text-sm font-medium text-fuchsia-300 hover:text-fuchsia-200"
+          >
+            Compare plans and top-up packs
+            <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          </Link>
         </section>
 
         <section aria-labelledby="tips" className="flex flex-col gap-6">

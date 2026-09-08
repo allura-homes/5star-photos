@@ -16,7 +16,13 @@ const ICONS: Record<string, typeof Upload> = {
   download_hires: Download,
   upscale: Maximize2,
   purchase: ShoppingBag,
+  topup: ShoppingBag,
+  plan_grant: RefreshCw,
+  signup_bonus: Gift,
   bonus: Gift,
+  refund: RefreshCw,
+  admin_grant: Gift,
+  admin_deduct: Coins,
 }
 
 const LABELS: Record<string, string> = {
@@ -26,8 +32,14 @@ const LABELS: Record<string, string> = {
   save_variation: "Saved variation",
   download_hires: "Downloaded hi-res",
   upscale: "Upscaled",
-  purchase: "Tokens added",
-  bonus: "Bonus tokens",
+  purchase: "Credits added",
+  topup: "Top-up purchased",
+  plan_grant: "Monthly credits",
+  signup_bonus: "Welcome credits",
+  bonus: "Bonus credits",
+  refund: "Refund",
+  admin_grant: "Credits granted",
+  admin_deduct: "Credits adjusted",
 }
 
 export function TransactionList({ transactions }: { transactions: Transaction[] }) {

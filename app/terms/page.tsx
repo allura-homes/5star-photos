@@ -10,13 +10,13 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Service"
-      updated="September 4, 2026"
+      updated="September 8, 2026"
       intro="These terms are an agreement between you and Allura Homes covering your use of 5star.photos. By creating an account you agree to them."
       sections={[
         {
           heading: "The service",
           body: [
-            "5star.photos uses AI models to enhance real estate photographs. The service is currently offered as a free beta. Features, limits and pricing may change, and we will give notice in the app before charging for anything.",
+            "5star.photos uses AI models to enhance real estate photographs. Usage is metered in credits. New accounts receive a one-time grant of welcome credits; further credits come from a monthly or annual subscription plan or from one-time top-up packs. Features, limits and pricing may change, and we will give notice in the app before any change affects what you pay.",
           ],
         },
         {
@@ -39,9 +39,10 @@ export default function TermsPage() {
           ],
         },
         {
-          heading: "Tokens",
+          heading: "Credits and billing",
           body: [
-            "When billing is enabled, tokens are consumed as described on the Help page. Tokens have no cash value, are non-transferable and are not refundable except where required by law.",
+            "Credits are consumed as described on the Pricing and Help pages. Plan credits reset at the start of each billing period and unused plan credits do not roll over. Top-up credits do not expire while a subscription is active; if the subscription ends they are held and become usable again on resubscribing. Credits have no cash value, are non-transferable and are not refundable except where required by law. A transform that returns no result is automatically refunded.",
+            "Subscriptions renew automatically until cancelled. You can cancel, upgrade or downgrade at any time from your Account page. Upgrades take effect immediately and are prorated; downgrades and cancellations take effect at the end of the current billing period. Payments are processed by Stripe.",
           ],
         },
         {
