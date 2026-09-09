@@ -17,6 +17,9 @@ export interface AccountSummary {
   created_at: string
   image_count: number
   saved_variation_count: number
+  /** E.164 phone number linked for SMS login, if any. */
+  phone: string | null
+  phone_verified: boolean
 }
 
 export async function getAccountSummary(): Promise<{ account: AccountSummary | null; error?: string }> {
@@ -48,6 +51,8 @@ export async function getAccountSummary(): Promise<{ account: AccountSummary | n
       email: profile.email ?? user.email ?? "",
       image_count: imageCount ?? 0,
       saved_variation_count: variationCount ?? 0,
+      phone: user.phone ? `+${user.phone.replace(/^\+/, "")}` : null,
+      phone_verified: Boolean(user.phone_confirmed_at),
     },
   }
 }

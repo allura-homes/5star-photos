@@ -23,6 +23,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
   const [displayName, setDisplayName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [needsConfirmation, setNeedsConfirmation] = useState(false)
 
   const supabase = createClient()
 
@@ -33,6 +34,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
       setPassword("")
       setDisplayName("")
       setError(null)
+      setNeedsConfirmation(false)
     }
   }, [isOpen])
 
@@ -99,7 +101,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
         }
 
         // If no session, email confirmation is required
-        setError("Please check your email to confirm your account")
+        setNeedsConfirmation(true)
         setIsLoading(false)
       } else {
         // Login
@@ -183,113 +185,138 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
                     <X className="w-5 h-5 text-white" />
                   </button>
 
-                  {/* Header with sparkles */}
-                  <div className="text-center mb-8">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 mb-4">
-                      <Sparkles className="w-4 h-4 text-amber-400" />
-                      <span className="text-sm font-medium text-amber-300">
-                        {freePreviewsRemaining} free preview{freePreviewsRemaining !== 1 ? "s" : ""} available
-                      </span>
-                    </div>
-                    <h2 className="text-2xl font-bold text-white mb-2">
-                      {mode === "signup" ? "Create your account" : "Welcome back"}
-                    </h2>
-                    <p className="text-slate-400">
-                      {mode === "signup" ? "Sign up to enhance your photos" : "Sign in to continue"}
-                    </p>
-                  </div>
-
-                  {/* Error message */}
-                  {error && (
-                    <div className="mb-6 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
-                      <p className="text-red-400 text-sm text-center">{error}</p>
-                    </div>
-                  )}
-
-                  {/* Email Form */}
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    {mode === "signup" && (
-                      <div className="relative">
-                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                        <input
-                          type="text"
-                          placeholder="Display name (optional)"
-                          value={displayName}
-                          onChange={(e) => setDisplayName(e.target.value)}
-                          className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
-                        />
+                  {needsConfirmation ? (
+                    <div className="text-center flex flex-col items-center gap-4 py-2">
+                      <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center">
+                        <Mail className="w-8 h-8 text-green-400" aria-hidden="true" />
                       </div>
-                    )}
-
-                    <div className="relative">
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                      <input
-                        type="email"
-                        placeholder="Email address"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
-                      />
+                      <h2 className="text-2xl font-bold text-white">Check your email</h2>
+                      <p className="text-slate-400 text-pretty">
+                        We&apos;ve sent a confirmation link to <strong className="text-white">{email}</strong>.
+                        Click it to activate your account, then come back and sign in.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNeedsConfirmation(false)
+                          setMode("login")
+                        }}
+                        className="w-full py-3 rounded-xl bg-white/10 text-white font-semibold hover:bg-white/15 transition-all"
+                      >
+                        Back to sign in
+                      </button>
                     </div>
+                  ) : (
+                    <>
+                      {/* Header with sparkles */}
+                      <div className="text-center mb-8">
+                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 mb-4">
+                          <Sparkles className="w-4 h-4 text-amber-400" />
+                          <span className="text-sm font-medium text-amber-300">
+                            {freePreviewsRemaining} free preview{freePreviewsRemaining !== 1 ? "s" : ""} available
+                          </span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-2">
+                          {mode === "signup" ? "Create your account" : "Welcome back"}
+                        </h2>
+                        <p className="text-slate-400">
+                          {mode === "signup" ? "Sign up to enhance your photos" : "Sign in to continue"}
+                        </p>
+                      </div>
 
-                    <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                      <input
-                        type="password"
-                        placeholder="Password (min 6 characters)"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        minLength={6}
-                        className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isLoading}
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          {mode === "signup" ? "Creating account..." : "Signing in..."}
-                        </>
-                      ) : mode === "signup" ? (
-                        "Create Account"
-                      ) : (
-                        "Sign In"
+                      {/* Error message */}
+                      {error && (
+                        <div className="mb-6 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                          <p className="text-red-400 text-sm text-center">{error}</p>
+                        </div>
                       )}
-                    </button>
-                  </form>
 
-                  {/* Toggle mode */}
-                  <p className="text-center text-slate-400 text-sm mt-6">
-                    {mode === "signup" ? (
-                      <>
-                        Already have an account?{" "}
+                      {/* Email Form */}
+                      <form onSubmit={handleSubmit} className="space-y-4">
+                        {mode === "signup" && (
+                          <div className="relative">
+                            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                            <input
+                              type="text"
+                              placeholder="Display name (optional)"
+                              value={displayName}
+                              onChange={(e) => setDisplayName(e.target.value)}
+                              className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                            />
+                          </div>
+                        )}
+
+                        <div className="relative">
+                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                          <input
+                            type="email"
+                            placeholder="Email address"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                          />
+                        </div>
+
+                        <div className="relative">
+                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                          <input
+                            type="password"
+                            placeholder="Password (min 6 characters)"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            minLength={6}
+                            className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                          />
+                        </div>
+
                         <button
-                          type="button"
-                          onClick={() => setMode("login")}
-                          className="text-purple-400 hover:text-purple-300 font-medium"
+                          type="submit"
+                          disabled={isLoading}
+                          className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
-                          Sign in
+                          {isLoading ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              {mode === "signup" ? "Creating account..." : "Signing in..."}
+                            </>
+                          ) : mode === "signup" ? (
+                            "Create Account"
+                          ) : (
+                            "Sign In"
+                          )}
                         </button>
-                      </>
-                    ) : (
-                      <>
-                        Don&apos;t have an account?{" "}
-                        <button
-                          type="button"
-                          onClick={() => setMode("signup")}
-                          className="text-purple-400 hover:text-purple-300 font-medium"
-                        >
-                          Sign up
-                        </button>
-                      </>
-                    )}
-                  </p>
+                      </form>
+
+                      {/* Toggle mode */}
+                      <p className="text-center text-slate-400 text-sm mt-6">
+                        {mode === "signup" ? (
+                          <>
+                            Already have an account?{" "}
+                            <button
+                              type="button"
+                              onClick={() => setMode("login")}
+                              className="text-purple-400 hover:text-purple-300 font-medium"
+                            >
+                              Sign in
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            Don&apos;t have an account?{" "}
+                            <button
+                              type="button"
+                              onClick={() => setMode("signup")}
+                              className="text-purple-400 hover:text-purple-300 font-medium"
+                            >
+                              Sign up
+                            </button>
+                          </>
+                        )}
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
