@@ -37,6 +37,7 @@ function isSessionExpired(session: { expires_at?: number } | null | undefined): 
 }
 
 export type UserRole = "viewer" | "user" | "admin"
+export type AdminRole = "support" | "super_admin"
 
 export interface UserProfile {
   id: string
@@ -44,6 +45,9 @@ export interface UserProfile {
   display_name: string | null
   avatar_url: string | null
   role: UserRole
+  /** Staff tier. null for ordinary customers. Authority is always re-checked server-side. */
+  admin_role: AdminRole | null
+  is_suspended: boolean
   /** Usable credit balance, mirrored by a DB trigger from plan + top-up + bonus credits. */
   tokens: number
   plan: PlanId
@@ -68,8 +72,29 @@ export interface AuthState {
   isLoading: boolean
   isAuthenticated: boolean
   isAdmin: boolean
+  adminRole: AdminRole | null
+  isSuperAdmin: boolean
+  isSupport: boolean
   canUploadFree: boolean
   freePreviewsRemaining: number
+}
+
+// Derive the staff-role flags from a profile. Admin powers are dropped for a
+// suspended account. These flags gate UI only; every privileged server action
+// re-checks authority with the service role.
+function adminFlags(profile: UserProfile | null): {
+  isAdmin: boolean
+  adminRole: AdminRole | null
+  isSuperAdmin: boolean
+  isSupport: boolean
+} {
+  const role = profile && !profile.is_suspended ? profile.admin_role : null
+  return {
+    isAdmin: role !== null,
+    adminRole: role,
+    isSuperAdmin: role === "super_admin",
+    isSupport: role === "support",
+  }
 }
 
 const AUTH_TIMEOUT = 10000
@@ -81,6 +106,9 @@ export function useAuth() {
     isLoading: true,
     isAuthenticated: false,
     isAdmin: false,
+    adminRole: null,
+    isSuperAdmin: false,
+    isSupport: false,
     canUploadFree: true,
     freePreviewsRemaining: 3,
   })
@@ -133,7 +161,7 @@ export function useAuth() {
       setState(prev => ({
         ...prev,
         profile,
-        isAdmin: profile.role === "admin",
+        ...adminFlags(profile),
         canUploadFree: profile.free_previews_used < profile.free_previews_limit,
         freePreviewsRemaining: Math.max(0, profile.free_previews_limit - profile.free_previews_used),
       }))
@@ -162,7 +190,7 @@ export function useAuth() {
           profile: null,
           isLoading: false,
           isAuthenticated: false,
-          isAdmin: false,
+          ...adminFlags(null),
           canUploadFree: true,
           freePreviewsRemaining: 3,
         })
@@ -178,7 +206,7 @@ export function useAuth() {
           profile,
           isLoading: false,
           isAuthenticated: true,
-          isAdmin: profile?.role === "admin" || false,
+          ...adminFlags(profile),
           canUploadFree: profile ? profile.free_previews_used < profile.free_previews_limit : true,
           freePreviewsRemaining: profile ? Math.max(0, profile.free_previews_limit - profile.free_previews_used) : 3,
         })
@@ -188,7 +216,7 @@ export function useAuth() {
           profile: null,
           isLoading: false,
           isAuthenticated: false,
-          isAdmin: false,
+          ...adminFlags(null),
           canUploadFree: true,
           freePreviewsRemaining: 3,
         })
@@ -199,7 +227,7 @@ export function useAuth() {
         profile: null,
         isLoading: false,
         isAuthenticated: false,
-        isAdmin: false,
+        ...adminFlags(null),
         canUploadFree: true,
         freePreviewsRemaining: 3,
       })
@@ -224,7 +252,7 @@ export function useAuth() {
         profile: null,
         isLoading: false,
         isAuthenticated: false,
-        isAdmin: false,
+        ...adminFlags(null),
         canUploadFree: true,
         freePreviewsRemaining: 3,
       })
@@ -238,7 +266,7 @@ export function useAuth() {
         profile,
         isLoading: false,
         isAuthenticated: true,
-        isAdmin: profile?.role === "admin" || false,
+        ...adminFlags(profile),
         canUploadFree: profile ? profile.free_previews_used < profile.free_previews_limit : true,
         freePreviewsRemaining: profile ? Math.max(0, profile.free_previews_limit - profile.free_previews_used) : 3,
       })

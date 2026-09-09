@@ -73,6 +73,7 @@ async function syncSubscription(admin: Admin, sub: Stripe.Subscription, opts: { 
       stripe_subscription_id: sub.id,
       subscription_status: sub.status,
       current_period_end: periodEnd(sub),
+      cancel_at_period_end: sub.cancel_at_period_end ?? false,
     })
     .eq("id", userId)
 
@@ -143,6 +144,7 @@ async function handleSubscriptionDeleted(admin: Admin, sub: Stripe.Subscription)
       stripe_subscription_id: null,
       subscription_status: "canceled",
       current_period_end: null,
+      cancel_at_period_end: false,
     })
     .eq("id", userId)
 }
