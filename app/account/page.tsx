@@ -8,6 +8,7 @@ import { getTokenHistory } from "@/lib/actions/token-actions"
 import { getBalance } from "@/lib/credits"
 import { BillingSection } from "@/components/billing/billing-section"
 import { DisplayNameForm } from "@/components/account/display-name-form"
+import { ChangePasswordForm } from "@/components/account/change-password-form"
 import { PhoneLinkForm } from "@/components/account/phone-link-form"
 import { SignOutButton } from "@/components/account/sign-out-button"
 import { TransactionList } from "@/components/account/transaction-list"
@@ -66,6 +67,16 @@ export default async function AccountPage() {
             )}
           </div>
           <DisplayNameForm initialName={account.display_name ?? ""} />
+        </section>
+
+        <section aria-labelledby="password" className="glass-card rounded-2xl p-6 flex flex-col gap-4">
+          <div>
+            <h2 id="password" className="text-lg font-semibold text-white">
+              Password
+            </h2>
+            <p className="text-sm text-slate-400">Update the password you use to sign in.</p>
+          </div>
+          <ChangePasswordForm />
         </section>
 
         <section aria-labelledby="phone-login" className="glass-card rounded-2xl p-6 flex flex-col gap-4">

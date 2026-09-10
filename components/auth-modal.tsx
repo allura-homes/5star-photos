@@ -24,6 +24,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [needsConfirmation, setNeedsConfirmation] = useState(false)
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle")
 
   const supabase = createClient()
 
@@ -35,8 +36,20 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
       setDisplayName("")
       setError(null)
       setNeedsConfirmation(false)
+      setResendState("idle")
     }
   }, [isOpen])
+
+  const handleResend = async () => {
+    setResendState("sending")
+    const { error } = await supabase.auth.resend({ type: "signup", email })
+    if (error) {
+      setError(error.message)
+      setResendState("idle")
+      return
+    }
+    setResendState("sent")
+  }
 
   const waitForProfile = async (userId: string, maxAttempts = 5): Promise<boolean> => {
     for (let i = 0; i < maxAttempts; i++) {
@@ -195,6 +208,19 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
                         We&apos;ve sent a confirmation link to <strong className="text-white">{email}</strong>.
                         Click it to activate your account, then come back and sign in.
                       </p>
+                      {resendState === "sent" ? (
+                        <p className="text-emerald-400 text-sm">Confirmation email resent — check your inbox.</p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResend}
+                          disabled={resendState === "sending"}
+                          className="text-purple-300 hover:text-purple-200 text-sm font-medium disabled:opacity-60"
+                        >
+                          {resendState === "sending" ? "Resending..." : "Didn't get it? Resend confirmation email"}
+                        </button>
+                      )}
+                      {error && <p className="text-red-400 text-sm">{error}</p>}
                       <button
                         type="button"
                         onClick={() => {

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PhoneLoginForm } from "@/components/auth/phone-login-form"
-import { Loader2, Mail, Lock, ArrowLeft, Smartphone } from "lucide-react"
+import { Loader2, Mail, Lock, ArrowLeft, Smartphone, CheckCircle2 } from "lucide-react"
 
 type LoginMethod = "email" | "phone"
 
@@ -21,15 +21,40 @@ function LoginForm() {
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null)
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle")
 
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = safeRedirectPath(searchParams.get("redirect"))
 
+  const handleResendConfirmation = async () => {
+    if (!unconfirmedEmail) return
+    setResendState("sending")
+    const supabase = createClient()
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: unconfirmedEmail,
+      options: {
+        emailRedirectTo:
+          process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ||
+          `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
+      },
+    })
+    if (error) {
+      setError(error.message)
+      setResendState("idle")
+      return
+    }
+    setResendState("sent")
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    setUnconfirmedEmail(null)
+    setResendState("idle")
 
     // Trim whitespace from email (common issue on mobile keyboards)
     const trimmedEmail = email.trim().toLowerCase()
@@ -61,6 +86,9 @@ function LoginForm() {
 
     if (error) {
       setError(error.message)
+      if (error.message.toLowerCase().includes("email not confirmed")) {
+        setUnconfirmedEmail(trimmedEmail)
+      }
       setIsLoading(false)
       return
     }
@@ -160,6 +188,25 @@ function LoginForm() {
               {error && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-6">
                   <p className="text-red-400 text-sm">{error}</p>
+                  {unconfirmedEmail && (
+                    <div className="mt-2">
+                      {resendState === "sent" ? (
+                        <p className="text-emerald-400 text-sm inline-flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                          Confirmation email resent — check your inbox.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResendConfirmation}
+                          disabled={resendState === "sending"}
+                          className="text-amber-400 hover:text-amber-300 text-sm font-medium disabled:opacity-60"
+                        >
+                          {resendState === "sending" ? "Resending..." : "Resend confirmation email"}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -183,9 +230,17 @@ function LoginForm() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password" className="text-slate-300">
-                    Password
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password" className="text-slate-300">
+                      Password
+                    </Label>
+                    <Link
+                      href="/auth/forgot-password"
+                      className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <Input

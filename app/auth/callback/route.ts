@@ -48,6 +48,20 @@ export async function GET(request: Request) {
 
   const supabase = await createClient()
 
+  // Password recovery links always land on the reset-password screen so the
+  // user sets a new password before going anywhere else in the app - never
+  // honor `next` for this flow.
+  if (type === "recovery") {
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
+      if (error) console.error("[v0] Recovery code exchange error:", error.message)
+    } else if (token_hash) {
+      const { error } = await supabase.auth.verifyOtp({ token_hash, type: "recovery" })
+      if (error) console.error("[v0] Recovery OTP verification error:", error.message)
+    }
+    return NextResponse.redirect(`${origin}/auth/reset-password`)
+  }
+
   // First try code exchange (OAuth and magic link with PKCE)
   if (code) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
