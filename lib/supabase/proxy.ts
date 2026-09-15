@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { createDirectClient } from "@/lib/supabase/direct"
 
 /**
  * Updates the Supabase session and handles auth redirects.
@@ -105,14 +106,22 @@ export async function updateSession(request: NextRequest) {
 
   // Staff access is needed for /admin/* and for the retired legacy pages.
   // Access is keyed off admin_role (support | super_admin), not the legacy
-  // profiles.role column, and a suspended account loses it. RLS lets a user
-  // read their own row, so the cookie-bound client is sufficient here.
+  // profiles.role column, and a suspended account loses it. Use the service-
+  // role client for this lookup so production RLS or stale policy changes can
+  // never turn a real staff member into a false negative.
   if ((isAdminPath || isLegacyPath) && user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("admin_role, is_suspended")
-      .eq("id", user.id)
-      .single()
+    let profile: { admin_role: string | null; is_suspended: boolean } | null = null
+    try {
+      const adminClient = createDirectClient()
+      const { data } = await adminClient
+        .from("profiles")
+        .select("admin_role, is_suspended")
+        .eq("id", user.id)
+        .maybeSingle()
+      profile = data
+    } catch {
+      // Fail closed if the privileged lookup cannot run.
+    }
 
     if (!profile?.admin_role || profile.is_suspended) {
       const url = request.nextUrl.clone()
