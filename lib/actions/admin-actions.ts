@@ -100,6 +100,26 @@ export interface AdminUserRow {
   isSuspended: boolean
   totalCredits: number
   createdAt: string
+  /** null = the address has not been confirmed yet. */
+  emailConfirmedAt: string | null
+}
+
+/** Reads auth.users.email_confirmed_at for a set of ids via a service-role-only RPC. */
+async function fetchEmailConfirmations(
+  admin: ReturnType<typeof createDirectClient>,
+  ids: string[],
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>()
+  if (ids.length === 0) return map
+  const { data, error } = await admin.rpc("admin_email_confirmations", { p_ids: ids })
+  if (error) {
+    console.error("[admin-actions] admin_email_confirmations failed:", error.message)
+    return map
+  }
+  for (const row of (data ?? []) as { id: string; email_confirmed_at: string | null }[]) {
+    map.set(row.id, row.email_confirmed_at)
+  }
+  return map
 }
 
 /** Paginated, searchable user list. Service-role read bypasses self-only RLS. */
@@ -135,7 +155,13 @@ export async function listUsers(params: {
     const { data, count, error } = await query
     if (error) throw error
 
+    const confirmations = await fetchEmailConfirmations(
+      admin,
+      (data ?? []).map((p) => p.id),
+    )
+
     const users: AdminUserRow[] = (data ?? []).map((p) => ({
+      emailConfirmedAt: confirmations.get(p.id) ?? null,
       id: p.id,
       email: p.email,
       displayName: p.display_name,
@@ -192,7 +218,10 @@ export async function getUserDetail(
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
 
+    const confirmations = await fetchEmailConfirmations(admin, [userId])
+
     const user: AdminUserDetail = {
+      emailConfirmedAt: confirmations.get(userId) ?? null,
       id: p.id,
       email: p.email,
       displayName: p.display_name,
