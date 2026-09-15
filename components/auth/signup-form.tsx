@@ -46,6 +46,7 @@ export function SignupForm({ redirect, source, successNote, submitLabel = "Creat
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle")
 
   const trimmedEmail = email.trim().toLowerCase()
   const emailError = touched.email && !EMAIL_PATTERN.test(trimmedEmail) ? "Enter a valid email address" : null
@@ -114,6 +115,22 @@ export function SignupForm({ redirect, source, successNote, submitLabel = "Creat
     setIsLoading(false)
   }
 
+  const handleResend = async () => {
+    setResendState("sending")
+    const supabase = createClient()
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: trimmedEmail,
+      options: { emailRedirectTo: callbackUrl() },
+    })
+    if (error) {
+      setError(error.message)
+      setResendState("idle")
+      return
+    }
+    setResendState("sent")
+  }
+
   const handleGoogleSignup = async () => {
     setIsLoading(true)
     setError(null)
@@ -147,6 +164,19 @@ export function SignupForm({ redirect, source, successNote, submitLabel = "Creat
         <p className="text-slate-400 text-pretty">
           {successNote ?? `Your ${WELCOME_CREDITS} welcome credits will be waiting when you sign in.`}
         </p>
+        {resendState === "sent" ? (
+          <p className="text-emerald-400 text-sm">Confirmation email resent — check your inbox.</p>
+        ) : (
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={resendState === "sending"}
+            className="text-amber-400 hover:text-amber-300 text-sm font-medium disabled:opacity-60"
+          >
+            {resendState === "sending" ? "Resending..." : "Didn't get it? Resend confirmation email"}
+          </button>
+        )}
+        {error && <p className="text-red-400 text-sm">{error}</p>}
         <Button asChild variant="outline" className="w-full bg-transparent">
           <Link href="/">Go Home</Link>
         </Button>

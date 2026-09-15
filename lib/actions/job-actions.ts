@@ -9,6 +9,7 @@ function safeRevalidate(_path: string) {
 }
 import { applyWatermark } from "@/lib/utils/watermark"
 import { createClient } from "@/lib/supabase/server"
+import { getAdminIdentity } from "@/lib/admin-auth"
 import { Buffer } from "buffer"
 
 /**
@@ -478,13 +479,11 @@ export async function getAllJobs() {
       cookies: { getAll: () => [], setAll: () => {} },
     })
 
-    const user = await getCurrentUser()
-    if (!user) {
-      return { error: "Not authenticated" }
-    }
-
-    const profile = await getUserProfile(user.id)
-    if (!profile || profile.role !== "admin") {
+    // Staff identity is keyed off admin_role (support | super_admin), not the
+    // legacy profiles.role column. getAdminIdentity resolves it with the
+    // service role and denies suspended staff.
+    const identity = await getAdminIdentity()
+    if (!identity) {
       return { error: "Access denied" }
     }
 

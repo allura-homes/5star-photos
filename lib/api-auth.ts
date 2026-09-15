@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import type { User } from "@supabase/supabase-js"
+import { createDirectClient } from "@/lib/supabase/direct"
+import type { AdminRole } from "@/lib/admin-auth"
 
 /**
  * Authentication guard for Route Handlers.
@@ -15,7 +17,7 @@ import type { User } from "@supabase/supabase-js"
  *   const { user } = auth
  */
 export type RequireUserResult =
-  | { ok: true; user: User; isAdmin: boolean }
+  | { ok: true; user: User; isAdmin: boolean; adminRole: AdminRole | null }
   | { ok: false; response: NextResponse }
 
 export async function requireUser(request: NextRequest): Promise<RequireUserResult> {
@@ -52,15 +54,26 @@ export async function requireUser(request: NextRequest): Promise<RequireUserResu
     }
   }
 
-  let isAdmin = false
+  // Read the staff role with the service-role client so RLS on `profiles`
+  // (self-only select) can never mask it. A suspended staff account loses
+  // admin powers. The `profiles` table has no `is_admin` column — staff are
+  // identified by `admin_role` (support | super_admin).
+  let adminRole: AdminRole | null = null
   try {
-    const { data: profile } = await supabase.from("profiles").select("is_admin").eq("id", user.id).single()
-    isAdmin = Boolean(profile?.is_admin)
+    const admin = createDirectClient()
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("admin_role, is_suspended")
+      .eq("id", user.id)
+      .maybeSingle()
+    if (profile && !profile.is_suspended && profile.admin_role) {
+      adminRole = profile.admin_role as AdminRole
+    }
   } catch {
     // Non-fatal: treat as non-admin
   }
 
-  return { ok: true, user, isAdmin }
+  return { ok: true, user, isAdmin: adminRole !== null, adminRole }
 }
 
 /**

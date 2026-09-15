@@ -103,12 +103,18 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Admin role is needed for /admin/* and for the retired legacy pages.
+  // Staff access is needed for /admin/* and for the retired legacy pages.
+  // Access is keyed off admin_role (support | super_admin), not the legacy
+  // profiles.role column, and a suspended account loses it. RLS lets a user
+  // read their own row, so the cookie-bound client is sufficient here.
   if ((isAdminPath || isLegacyPath) && user) {
-    // Fetch user's role from profiles
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("admin_role, is_suspended")
+      .eq("id", user.id)
+      .single()
 
-    if (profile?.role !== "admin") {
+    if (!profile?.admin_role || profile.is_suspended) {
       const url = request.nextUrl.clone()
       url.pathname = "/library"
       url.search = ""
