@@ -193,8 +193,10 @@ STRICTLY FORBIDDEN - WILL RESULT IN FAILURE:
 - Replacing an indoor photo with an outdoor photo (or vice versa)
 - Adding or removing furniture, fixtures, or architectural elements
 - Changing the room type (e.g., bedroom to living room)
-- Adding grass to concrete, pavers, brick, or any hard surface
+- Adding grass, lawn, or turf to concrete, pavers, brick, decking, gravel, or any hard surface where it does not already exist
+- Adding outdoor furniture, umbrellas, planters, dining sets, lounge chairs, or any staging props not in the original photo, UNLESS the user's instructions below explicitly ask for them
 - Adding pools, hot tubs, or any objects not in the original
+- Adding windows, doors, skylights, or any openings that do not exist in the original photo
 - Removing walls, fences, pergolas, or structural elements
 - Changing the camera angle or perspective
 
@@ -603,6 +605,26 @@ async function generateNanoBananaImage(originalUrl: string, prompt: string): Pro
         .trim()
     }
     
+    // Nano Banana has two known tendencies we have to explicitly override:
+    // 1. It glows windows with warm interior light even on clearly daytime
+    //    photos, which looks fake. It should only glow windows for a
+    //    dusk/night scene (detected from the Art Director's prompt text).
+    // 2. It invents windows, grass, and outdoor furniture that don't exist
+    //    in the original photo. Neither of the two hardcoded templates below
+    //    carried the Art Director's anti-hallucination rules, so we restate
+    //    them here explicitly.
+    const promptTextLower = (processedPrompt || "").toLowerCase()
+    const isDuskOrNightScene = /twilight|dusk|night|evening|blue hour/.test(promptTextLower)
+    const windowsGuidance = isDuskOrNightScene
+      ? "Windows should glow with warm, inviting interior light appropriate for this dusk/night scene."
+      : "This is a DAYTIME photo. Windows must show natural daylight and realistic outdoor reflections - do NOT add interior lighting glow, illuminated lamps, or any warm light behind the glass. A daytime photo with glowing windows looks fake."
+
+    const antiHallucinationRules = `MANDATORY ANTI-HALLUCINATION RULES (DO NOT VIOLATE):
+- Do NOT add windows, doors, skylights, or any openings that don't exist in the original photo. Preserve the exact number, size, and position of every existing window and door.
+- Do NOT add grass, lawn, or turf to any surface where none currently exists (patios, decks, concrete, pavers, gravel, or bare dirt must stay as they are).
+- Do NOT add outdoor furniture, umbrellas, planters, dining sets, lounge chairs, or any staging props that are not in the original photo, UNLESS explicitly requested in the instructions below.
+- Do NOT add pools, hot tubs, or any object not visible in the original.`
+
     const editingPrompt = processedPrompt
       ? `TRANSFORM this real estate photo into a STUNNING architectural photograph worthy of Architectural Digest or Dwell magazine.
 
@@ -610,12 +632,14 @@ Channel the aesthetic mastery of legendary architectural photographers like Juli
 - DRAMATIC yet natural lighting that makes spaces feel luminous and inviting
 - RICH, vibrant colors with perfect white balance - no dull or washed-out tones
 - CRYSTAL-CLEAR details with professional sharpness
-- Windows should glow with beautiful natural light or show inviting outdoor views
+- ${windowsGuidance}
 - Every surface should have depth, texture, and visual appeal
 
 ${processedPrompt}
 
 This should look like a SIGNIFICANT improvement over the original - the kind of transformation that makes viewers say "wow."
+
+${antiHallucinationRules}
 
 MANDATORY FRAMING RULES (DO NOT VIOLATE):
 - Keep the EXACT same aspect ratio as the original image
@@ -628,11 +652,13 @@ Channel the aesthetic mastery of legendary architectural photographers like Juli
 - DRAMATIC yet natural lighting that makes spaces feel luminous and inviting
 - RICH, vibrant colors with perfect white balance - no dull or washed-out tones
 - CRYSTAL-CLEAR details with professional sharpness
-- Windows should glow with beautiful natural light or show inviting outdoor views
+- ${windowsGuidance}
 - Sky (if visible): Vibrant blue with beautiful clouds
-- Landscaping (if visible): Lush, verdant, magazine-perfect
+- Landscaping (if visible, and only if already present): Lush, verdant, magazine-perfect
 
 This should look like a SIGNIFICANT improvement over the original - the kind of transformation that makes viewers say "wow."
+
+${antiHallucinationRules}
 
 MANDATORY FRAMING RULES (DO NOT VIOLATE):
 - Keep the EXACT same aspect ratio as the original image
@@ -960,16 +986,16 @@ The final image should look like it was shot with professional studio lighting -
 /**
  * Image Enhancement API
  *
- * VERSION: v290 (4 Model Variations)
+ * VERSION: v291 (4 Model Variations)
  *
  * Endpoints:
  * - POST /api/edit-image - Generate enhanced image variation
  *
  * Supported Providers:
- * - nano_banana / nano_banana_pro: Nano Banana Pro (Gemini 3 Pro) - V1
  * - openai_1_5: OpenAI GPT Image 1.5 via Images Edits API - V1
  * - openai_2: OpenAI GPT Image 2 via Images Edits API - V2
  * - nano_banana_pro: Google Gemini 3 Pro Image - V3
+ * - openai_2_5: OpenAI GPT Image 2.5 via Images Edits API - V4 (beta, all plans)
  *
  * See MODEL_CONFIGURATION.md for model details.
  */
@@ -1093,6 +1119,7 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
       "openai_mini",
       "openai_1_5",
       "openai_2",
+      "openai_2_5",
       "nano_banana",
       "nano_banana_pro",
       "gemini",
@@ -1194,6 +1221,26 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
           })
         } catch (err) {
           console.error(`[v0] OpenAI GPT Image 2 failed:`, err)
+          throw err
+        }
+      } else if (provider === "openai_2_5") {
+        console.log(`[v0] Calling OpenAI GPT Image 2.5 (v${variation_number})`)
+        try {
+          const openai25ImageUrl = await generateOpenAIImage(original_url, promptToUse, "gpt-image-2.5")
+          console.log(
+            "[v0] OpenAI 2.5 returned URL type:",
+            openai25ImageUrl?.startsWith("data:") ? "base64" : "url",
+            "length:",
+            openai25ImageUrl?.length,
+          )
+          return Response.json({
+            url: openai25ImageUrl,
+            filename: `${filename}-openai-2.5-v${variation_number}`,
+            variation_number,
+            needs_watermark: apply_watermark,
+          })
+        } catch (err) {
+          console.error(`[v0] OpenAI GPT Image 2.5 failed:`, err)
           throw err
         }
       } else if (provider === "nano_banana" || provider === "nano_banana_pro" || provider === "gemini_3_pro") {

@@ -28,6 +28,19 @@ This document defines the exact AI models used for image enhancement. These conf
 - **Quality**: Excellent - maintains original color palette, natural-looking enhancements
 - **Notes**: Also known as "Nano Banana Pro", requires GOOGLE_CLOUD_API_KEY
 
+## v4 - GPT-Image 2.5 (Beta)
+- **Model**: `gpt-image-2.5`
+- **API**: OpenAI Images Edits API (same endpoint/method as v1)
+- **Endpoint**: `https://api.openai.com/v1/images/edits`
+- **Method**: Multipart FormData (NOT JSON)
+- **Purpose**: Newest OpenAI image model, evaluated during the beta period
+- **Availability**: Enabled for ALL accounts during beta. Once out of beta, restrict
+  to premium-tier accounts only by setting `premiumOnly: true` (or removing from
+  the free-tier plan's `models` list) in `lib/plans.ts` and `lib/constants/models.ts`.
+- **Notes**: Uses the same OpenAI org/project key as v1/gpt-image-2. If access is
+  ever revoked or the model 404s, it will fail independently of v1 - errors are
+  captured per-model and shown in the batch/transform UI, not swallowed.
+
 ## Deprecated Models
 
 ### ~~FLUX.2 Pro Edit~~ (DEPRECATED - was V3)
@@ -77,6 +90,14 @@ The prompt explicitly forbids:
 - Replacing background buildings with trees/sky
 
 ## Version History
+
+- **2026-09-17 (V4 Added: GPT-Image 2.5)**: Added `gpt-image-2.5` as V4, with its
+  own Art Director prompt variant and QA pass, enabled for all accounts during
+  beta. Also hardened the anti-hallucination rules shared by all models: models
+  must never add grass/turf to hard surfaces or outdoor furniture unless the
+  user's own free-text instructions request it, and Nano Banana specifically
+  must never glow window interiors on daytime photos or invent windows/doors
+  that aren't in the original photo (glow is allowed only for dusk/night scenes).
 
 - **2026-05-15 (Nano Banana Lighting Fix)**: Re-enabled Nano Banana with indoor lighting correction
   - Added model-specific prompt enhancement for indoor photos

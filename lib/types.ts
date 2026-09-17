@@ -2,7 +2,14 @@ export type JobStatus = "uploaded" | "processing_preview" | "preview_ready" | "p
 
 export type StyleMode = "full_5star_fix"
 
-export type ModelProvider = "openai_1_5" | "nano_banana_pro" | "openai_2" | "flux_2_pro" | "nano_banana" | "gemini_3_pro"
+export type ModelProvider =
+  | "openai_1_5"
+  | "nano_banana_pro"
+  | "openai_2"
+  | "openai_2_5"
+  | "flux_2_pro"
+  | "nano_banana"
+  | "gemini_3_pro"
 
 export type PhotoClassification = "indoor" | "outdoor" | "unknown"
 

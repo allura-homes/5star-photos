@@ -30,9 +30,14 @@ export const CREDIT_COSTS = {
 
 export type CreditAction = keyof typeof CREDIT_COSTS
 
-// The three approved models every plan gets (V1 + V2 + V3). Pro and Max unlock
-// every active model in lib/constants/models.ts.
-export const BASE_MODELS = ["openai_1_5", "openai_2", "nano_banana_pro"] as const
+// The approved models every plan gets (V1 + V2 + V3). Pro and Max unlock every
+// active model in lib/constants/models.ts.
+//
+// BETA OVERRIDE: V4 (openai_2_5 / GPT Image 2.5) is included here for every
+// plan, including Free, while it's in beta. Once beta ends, remove
+// "openai_2_5" from BASE_MODELS so it only remains available via allModels
+// (Pro/Max) - see lib/constants/models.ts for the V4 definition.
+export const BASE_MODELS = ["openai_1_5", "openai_2", "nano_banana_pro", "openai_2_5"] as const
 
 export const PLANS: Record<PlanId, Plan> = {
   free: {
@@ -47,7 +52,7 @@ export const PLANS: Record<PlanId, Plan> = {
     highlights: [
       `${WELCOME_CREDITS} welcome credits, one time`,
       "Enough for 3 photos with hi-res downloads",
-      "3 AI models per transform",
+      "4 AI models per transform (beta)",
     ],
   },
   startup: {
@@ -59,7 +64,7 @@ export const PLANS: Record<PlanId, Plan> = {
     monthlyCredits: 100,
     models: BASE_MODELS,
     allModels: false,
-    highlights: ["V1, V2 and V3 models on every transform", "Buy top-up packs anytime", "Cancel or change plans anytime"],
+    highlights: ["V1-V4 models on every transform (V4 in beta)", "Buy top-up packs anytime", "Cancel or change plans anytime"],
   },
   pro: {
     id: "pro",

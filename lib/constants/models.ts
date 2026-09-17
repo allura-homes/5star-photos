@@ -41,13 +41,16 @@ export const MODELS: ModelInfo[] = [
     modelId: "gemini-3-pro-image",
   },
   {
-    provider: "flux_2_pro",
+    provider: "openai_2_5",
     label: "V4",
-    description: "Reserved for a future model or legacy comparison.",
-    active: false,
-    modelId: "flux-2-pro (fal.ai)",
+    description: "OpenAI's GPT Image 2.5. Beta model, included for everyone during the beta period.",
+    active: true,
+    modelId: "gpt-image-2.5",
   },
 ]
+
+// flux_2_pro (fal.ai) was V4 previously; disabled 2026-05-15 for fal.ai billing
+// issues. See MODEL_CONFIGURATION.md. Not currently reachable from the UI.
 
 export const ACTIVE_MODELS = MODELS.filter((m) => m.active)
 
