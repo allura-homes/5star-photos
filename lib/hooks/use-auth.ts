@@ -70,6 +70,12 @@ export interface AuthState {
   user: User | null
   profile: UserProfile | null
   isLoading: boolean
+  /**
+   * True while the user is signed in but the profile row has not loaded yet
+   * (slow network / hung PostgREST call). Consumers must not treat this as
+   * "0 credits" - a background retry is in flight.
+   */
+  isProfileLoading: boolean
   isAuthenticated: boolean
   isAdmin: boolean
   adminRole: AdminRole | null
@@ -104,6 +110,7 @@ export function useAuth() {
     user: null,
     profile: null,
     isLoading: true,
+    isProfileLoading: false,
     isAuthenticated: false,
     isAdmin: false,
     adminRole: null,
@@ -154,19 +161,51 @@ export function useAuth() {
     return fetchPromise
   }, [])
 
+  const applyProfile = useCallback((profile: UserProfile) => {
+    setState((prev) => ({
+      ...prev,
+      profile,
+      isProfileLoading: false,
+      ...adminFlags(profile),
+      canUploadFree: profile.free_previews_used < profile.free_previews_limit,
+      freePreviewsRemaining: Math.max(0, profile.free_previews_limit - profile.free_previews_used),
+    }))
+  }, [])
+
   const refreshProfile = useCallback(async () => {
     if (!state.user) return
     const profile = await fetchProfile(state.user.id)
-    if (profile) {
-      setState(prev => ({
-        ...prev,
-        profile,
-        ...adminFlags(profile),
-        canUploadFree: profile.free_previews_used < profile.free_previews_limit,
-        freePreviewsRemaining: Math.max(0, profile.free_previews_limit - profile.free_previews_used),
-      }))
+    if (profile) applyProfile(profile)
+  }, [state.user, fetchProfile, applyProfile])
+
+  // When the initial (timeout-guarded) profile fetch comes back empty for a
+  // signed-in user, keep retrying in the background with backoff. Without this
+  // a single slow PostgREST call left the whole session showing "0 credits" and
+  // blocked uploads until a hard refresh.
+  const retryProfileRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleProfileRetry = useCallback(
+    (userId: string, attempt = 0) => {
+      if (retryProfileRef.current) clearTimeout(retryProfileRef.current)
+      if (attempt >= 5) {
+        setState((prev) => ({ ...prev, isProfileLoading: false }))
+        return
+      }
+      const delay = Math.min(1000 * 2 ** attempt, 8000)
+      retryProfileRef.current = setTimeout(async () => {
+        fetchingProfileRef.current = null
+        const profile = await withTimeout(fetchProfile(userId), 6000, null)
+        if (profile) applyProfile(profile)
+        else scheduleProfileRetry(userId, attempt + 1)
+      }, delay)
+    },
+    [fetchProfile, applyProfile],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (retryProfileRef.current) clearTimeout(retryProfileRef.current)
     }
-  }, [state.user, fetchProfile])
+  }, [])
 
   const refreshAuth = useCallback(async () => {
     const supabase = createClient()
@@ -189,6 +228,7 @@ export function useAuth() {
           user: null,
           profile: null,
           isLoading: false,
+          isProfileLoading: false,
           isAuthenticated: false,
           ...adminFlags(null),
           canUploadFree: true,
@@ -205,16 +245,19 @@ export function useAuth() {
           user,
           profile,
           isLoading: false,
+          isProfileLoading: !profile,
           isAuthenticated: true,
           ...adminFlags(profile),
           canUploadFree: profile ? profile.free_previews_used < profile.free_previews_limit : true,
           freePreviewsRemaining: profile ? Math.max(0, profile.free_previews_limit - profile.free_previews_used) : 3,
         })
+        if (!profile) scheduleProfileRetry(user.id)
       } else {
         setState({
           user: null,
           profile: null,
           isLoading: false,
+          isProfileLoading: false,
           isAuthenticated: false,
           ...adminFlags(null),
           canUploadFree: true,
@@ -226,13 +269,14 @@ export function useAuth() {
         user: null,
         profile: null,
         isLoading: false,
+        isProfileLoading: false,
         isAuthenticated: false,
         ...adminFlags(null),
         canUploadFree: true,
         freePreviewsRemaining: 3,
       })
     }
-  }, [fetchProfile])
+  }, [fetchProfile, scheduleProfileRetry])
 
   useEffect(() => {
     // Only run on client side
@@ -251,6 +295,7 @@ export function useAuth() {
         user: null,
         profile: null,
         isLoading: false,
+        isProfileLoading: false,
         isAuthenticated: false,
         ...adminFlags(null),
         canUploadFree: true,
@@ -265,11 +310,13 @@ export function useAuth() {
         user,
         profile,
         isLoading: false,
+        isProfileLoading: !profile,
         isAuthenticated: true,
         ...adminFlags(profile),
         canUploadFree: profile ? profile.free_previews_used < profile.free_previews_limit : true,
         freePreviewsRemaining: profile ? Math.max(0, profile.free_previews_limit - profile.free_previews_used) : 3,
       })
+      if (!profile) scheduleProfileRetry(user.id)
     }
 
     // Initial auth check
@@ -348,7 +395,7 @@ export function useAuth() {
       clearTimeout(authTimeout)
       subscription.unsubscribe()
     }
-  }, [fetchProfile])
+  }, [fetchProfile, scheduleProfileRetry])
 
   const signOut = useCallback(async () => {
     const supabase = createClient()

@@ -14,7 +14,7 @@ export interface Plan {
   highlights: readonly string[]
 }
 
-export const WELCOME_CREDITS = 45
+export const WELCOME_CREDITS = 50
 
 /** Non-expiring bonus for accounts created through /beta. Priced against the 50-credit top-up pack. */
 export const BETA_BONUS_CREDITS = 50

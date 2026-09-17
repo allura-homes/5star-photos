@@ -17,6 +17,7 @@ import { PLANS } from "@/lib/plans"
 import type { Job } from "@/lib/types"
 import type { AdminRole } from "@/lib/admin-auth"
 import { UserDetailDrawer } from "@/components/admin/user-detail-drawer"
+import { BulkActionsBar } from "@/components/admin/bulk-actions-bar"
 import { Pill, formatDate, formatDateTime, formatCents, subscriptionTone, jobStatusTone } from "@/components/admin/admin-ui"
 
 type Tab = "overview" | "users" | "jobs" | "audit"
@@ -53,11 +54,35 @@ export function AdminDashboard({ isSuperAdmin: isSuperAdminHint }: { isSuperAdmi
   const [search, setSearch] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
 
   const loadUsers = useCallback(async (searchTerm: string) => {
     const result = await listUsers({ search: searchTerm, pageSize: 50 })
     if (result.ok && result.users) setUsers(result.users)
   }, [])
+
+  const toggleChecked = (id: string) =>
+    setCheckedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const allVisibleChecked = users.length > 0 && users.every((u) => checkedIds.has(u.id))
+  const toggleAllVisible = () =>
+    setCheckedIds((prev) => {
+      const next = new Set(prev)
+      if (allVisibleChecked) users.forEach((u) => next.delete(u.id))
+      else users.forEach((u) => next.add(u.id))
+      return next
+    })
+
+  const refreshAfterChange = () => {
+    loadUsers(search)
+    getAdminMetrics().then(setMetrics)
+    listAuditLog(50).then((a) => a.ok && a.entries && setAudit(a.entries))
+  }
 
   const loadAll = useCallback(async () => {
     setIsLoading(true)
@@ -185,10 +210,20 @@ export function AdminDashboard({ isSuperAdmin: isSuperAdminHint }: { isSuperAdmi
             />
           </div>
           <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden overflow-x-auto">
-            <table className="w-full min-w-[640px]">
+            <table className="w-full min-w-[760px]">
               <thead>
                 <tr className="border-b border-white/10 text-left text-sm font-medium text-slate-400">
-                  <th className="px-6 py-4">User</th>
+                  <th className="pl-6 pr-2 py-4 w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible users"
+                      checked={allVisibleChecked}
+                      onChange={toggleAllVisible}
+                      className="h-4 w-4 rounded border-white/30 bg-white/10 accent-[#FF3EDB]"
+                    />
+                  </th>
+                  <th className="px-4 py-4">User</th>
+                  <th className="px-6 py-4">Email</th>
                   <th className="px-6 py-4">Access</th>
                   <th className="px-6 py-4">Plan</th>
                   <th className="px-6 py-4">Credits</th>
@@ -200,14 +235,32 @@ export function AdminDashboard({ isSuperAdmin: isSuperAdminHint }: { isSuperAdmi
                   <tr
                     key={u.id}
                     onClick={() => setSelectedUserId(u.id)}
-                    className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
+                    className={`border-b border-white/5 hover:bg-white/5 cursor-pointer ${
+                      checkedIds.has(u.id) ? "bg-[#FF3EDB]/5" : ""
+                    }`}
                   >
-                    <td className="px-6 py-4">
+                    <td className="pl-6 pr-2 py-4" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${u.email}`}
+                        checked={checkedIds.has(u.id)}
+                        onChange={() => toggleChecked(u.id)}
+                        className="h-4 w-4 rounded border-white/30 bg-white/10 accent-[#FF3EDB]"
+                      />
+                    </td>
+                    <td className="px-4 py-4">
                       <p className="text-white font-medium flex items-center gap-2">
                         {u.displayName || "—"}
                         {u.isSuspended && <Pill tone="danger">Suspended</Pill>}
                       </p>
                       <p className="text-sm text-slate-400">{u.email}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      {u.emailConfirmedAt ? (
+                        <Pill tone="success">Verified</Pill>
+                      ) : (
+                        <Pill tone="warning">Unverified</Pill>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <Pill tone={roleTone(u.adminRole)}>{roleLabel(u.adminRole)}</Pill>
@@ -226,7 +279,7 @@ export function AdminDashboard({ isSuperAdmin: isSuperAdminHint }: { isSuperAdmi
                 ))}
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                       No users match your search.
                     </td>
                   </tr>
@@ -234,6 +287,12 @@ export function AdminDashboard({ isSuperAdmin: isSuperAdminHint }: { isSuperAdmi
               </tbody>
             </table>
           </div>
+          <BulkActionsBar
+            selectedIds={Array.from(checkedIds)}
+            isSuperAdmin={isSuperAdmin}
+            onClear={() => setCheckedIds(new Set())}
+            onDone={refreshAfterChange}
+          />
         </>
       )}
 
@@ -306,11 +365,7 @@ export function AdminDashboard({ isSuperAdmin: isSuperAdminHint }: { isSuperAdmi
         userId={selectedUserId}
         isSuperAdmin={isSuperAdmin}
         onClose={() => setSelectedUserId(null)}
-        onChanged={() => {
-          loadUsers(search)
-          getAdminMetrics().then(setMetrics)
-          listAuditLog(50).then((a) => a.ok && a.entries && setAudit(a.entries))
-        }}
+        onChanged={refreshAfterChange}
       />
     </div>
   )

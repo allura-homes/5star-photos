@@ -9,14 +9,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, Mail, Lock, User, Eye, EyeOff, Check } from "lucide-react"
+import { MIN_PASSWORD_LENGTH, PASSWORD_HINT, getPasswordError, isPasswordValid } from "@/lib/password-policy"
 
-const MIN_PASSWORD_LENGTH = 8
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function passwordStrength(password: string): { score: 0 | 1 | 2 | 3; label: string; tone: string } {
   if (!password) return { score: 0, label: "", tone: "" }
   let points = 0
-  if (password.length >= MIN_PASSWORD_LENGTH) points++
+  if (password.length >= 8) points++
   if (password.length >= 12) points++
   if (/[A-Z]/.test(password) && /[a-z]/.test(password)) points++
   if (/\d/.test(password)) points++
@@ -50,14 +50,10 @@ export function SignupForm({ redirect, source, successNote, submitLabel = "Creat
 
   const trimmedEmail = email.trim().toLowerCase()
   const emailError = touched.email && !EMAIL_PATTERN.test(trimmedEmail) ? "Enter a valid email address" : null
-  const passwordError =
-    touched.password && password.length < MIN_PASSWORD_LENGTH
-      ? `Use at least ${MIN_PASSWORD_LENGTH} characters`
-      : null
+  const passwordError = touched.password ? getPasswordError(password) : null
   const confirmError = touched.confirm && confirm !== password ? "Passwords don't match" : null
   const strength = passwordStrength(password)
-  const formValid =
-    EMAIL_PATTERN.test(trimmedEmail) && password.length >= MIN_PASSWORD_LENGTH && confirm === password
+  const formValid = EMAIL_PATTERN.test(trimmedEmail) && isPasswordValid(password) && confirm === password
 
   const callbackUrl = () => {
     if (process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL) return process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL
@@ -278,10 +274,7 @@ export function SignupForm({ redirect, source, successNote, submitLabel = "Creat
             ))}
           </div>
           <p id="password-hint" className={`text-xs ${passwordError ? "text-red-400" : "text-slate-500"}`}>
-            {passwordError ??
-              (strength.label
-                ? `${strength.label} password`
-                : `At least ${MIN_PASSWORD_LENGTH} characters. Mixing letters, numbers and symbols makes it stronger.`)}
+            {passwordError ?? (strength.label ? `${strength.label} password` : PASSWORD_HINT)}
           </p>
         </div>
 

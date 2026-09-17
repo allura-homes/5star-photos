@@ -1,13 +1,26 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { Loader2, X, ExternalLink, ShieldCheck, ShieldOff, Ban, RotateCcw, CreditCard, UserCog } from "lucide-react"
+import {
+  Loader2,
+  X,
+  ExternalLink,
+  ShieldCheck,
+  ShieldOff,
+  Ban,
+  RotateCcw,
+  CreditCard,
+  UserCog,
+  KeyRound,
+  MailCheck,
+} from "lucide-react"
 import {
   getUserDetail,
   setAdminRole,
   setUserSuspended,
   type AdminUserDetail,
 } from "@/lib/actions/admin-actions"
+import { adminSendPasswordReset, adminVerifyEmail } from "@/lib/actions/admin-account-actions"
 import {
   adminRefundPayment,
   adminCancelSubscription,
@@ -112,7 +125,58 @@ export function UserDetailDrawer({
                 <Pill tone={subscriptionTone(detail.subscriptionStatus)}>{detail.subscriptionStatus}</Pill>
               )}
               {pendingCancel && <Pill tone="warning">Cancels at period end</Pill>}
+              {detail.emailConfirmedAt ? (
+                <Pill tone="success">Email verified</Pill>
+              ) : (
+                <Pill tone="warning">Email unverified</Pill>
+              )}
             </div>
+
+            {/* Account access — available to both staff tiers */}
+            <section className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <h3 className="text-sm font-medium text-slate-300 mb-3">Account access</h3>
+              <p className="text-xs text-slate-500 mb-3">
+                {detail.emailConfirmedAt
+                  ? `Email confirmed ${formatDateTime(detail.emailConfirmedAt)}.`
+                  : "This address has not been confirmed. The user can't sign in with a password until it is."}
+              </p>
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="ghost"
+                  className="justify-start h-9 text-sm text-slate-200 hover:bg-white/10"
+                  onClick={() =>
+                    setReasonConfig({
+                      title: "Send password reset link",
+                      description: `Email a password reset link to ${detail.email}.`,
+                      confirmLabel: "Send link",
+                      onConfirm: (reason) => adminSendPasswordReset(detail.id, reason),
+                      successMessage: "Reset link sent.",
+                    })
+                  }
+                >
+                  <KeyRound className="w-4 h-4 mr-2" />
+                  Send password reset link
+                </Button>
+                {!detail.emailConfirmedAt && (
+                  <Button
+                    variant="ghost"
+                    className="justify-start h-9 text-sm text-emerald-300 hover:bg-emerald-500/10"
+                    onClick={() =>
+                      setReasonConfig({
+                        title: "Mark email as verified",
+                        description: `Confirm ${detail.email} without the user clicking the link in their inbox.`,
+                        confirmLabel: "Verify email",
+                        onConfirm: (reason) => adminVerifyEmail(detail.id, reason),
+                        successMessage: "Email marked verified.",
+                      })
+                    }
+                  >
+                    <MailCheck className="w-4 h-4 mr-2" />
+                    Mark email as verified
+                  </Button>
+                )}
+              </div>
+            </section>
 
             {/* Credits */}
             <section className="rounded-xl border border-white/10 bg-white/5 p-4">
