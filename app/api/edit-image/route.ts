@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server"
 import { Buffer } from "buffer"
 import { requireUser } from "@/lib/api-auth"
+import { isDataUrl, persistDataUrlAsVariation } from "@/lib/storage/upload-data-url"
 import { createDirectClient } from "@/lib/supabase/direct"
 
 interface CloudinaryEdits {
@@ -1024,7 +1025,36 @@ export async function POST(req: NextRequest) {
     await admin.rpc("increment_transform_success", { p_transform_id: transformId })
   }
 
-  return response
+  return storeGeneratedImage(response, auth.user.id)
+}
+
+/**
+ * Swap a base64 result for a Storage URL before it leaves the server. The
+ * client would otherwise have to POST the multi-megabyte data URL back to
+ * /api/save-variation, which fails with FUNCTION_PAYLOAD_TOO_LARGE on Vercel.
+ * If the upload fails we fall back to the original payload so the user still
+ * gets a preview.
+ */
+async function storeGeneratedImage(response: Response, userId: string): Promise<Response> {
+  if (!response.ok) return response
+
+  let payload: Record<string, unknown>
+  try {
+    payload = await response.clone().json()
+  } catch {
+    return response
+  }
+
+  if (!isDataUrl(payload.url)) return response
+
+  try {
+    const storedUrl = await persistDataUrlAsVariation(userId, payload.url)
+    console.log("[v0] Stored generated image at", storedUrl.slice(0, 100))
+    return Response.json({ ...payload, url: storedUrl })
+  } catch (err) {
+    console.error("[v0] Storing generated image failed, returning base64:", err instanceof Error ? err.message : err)
+    return response
+  }
 }
 
 async function runEditImage(body: Record<string, unknown>): Promise<Response> {
