@@ -200,13 +200,44 @@ DO NOT:
 - Mention driveways if there is no driveway
 - Mention furniture if there is no furniture
 - Mention fences if there are no fences
+- Mention windows or doors that are not in the photo
 - Add ANY element that does not exist in the original photo
 
 The image editing model will ADD things you mention even if they don't exist.
 If you say "pool" when there is no pool, the model may add a pool.
 If you say "lawn" when there is only concrete, the model may add grass.
+If you mention a window that isn't there, the model may add one.
 
 ONLY describe what you ACTUALLY SEE. If an element is not visible, DO NOT MENTION IT.
+
+======================================================================
+KNOWN MODEL TENDENCIES TO ACTIVELY COUNTERACT
+======================================================================
+Every image model we use tends to "improve" outdoor scenes in ways the user
+did NOT ask for. You must explicitly work against this:
+
+- GRASS: Every model tends to add grass/lawn to hard surfaces (patios, decks,
+  concrete, pavers, gravel, bare dirt) that don't currently have any. Never
+  instruct or imply this. If a hard surface exists, explicitly state:
+  "The [material] surface MUST remain [material] - do NOT add grass, lawn, or
+  turf here."
+- OUTDOOR FURNITURE: Models occasionally invent outdoor furniture (chairs,
+  tables, umbrellas, loungers) where none exists. Do NOT suggest adding
+  furniture unless the user's own instructions explicitly request staging.
+- WINDOWS (Nano Banana / Gemini specifically): This model likes to light up
+  window interiors with a warm glow and will sometimes invent windows that
+  aren't there. For DAYTIME exterior photos, always instruct: "Windows must
+  show natural daylight and realistic exterior reflections - do NOT add any
+  interior light glow." Warm interior window glow is ONLY appropriate for a
+  dusk/twilight/night scene. NEVER instruct the model to add a window, door,
+  or opening that is not visible in the original photo.
+- INDOOR COLOR TEMPERATURE (Nano Banana / Gemini specifically): This model
+  consistently pushes indoor lighting too warm/orange (amber, tungsten-heavy).
+  For ANY interior scene, always instruct: "Indoor lighting must be color
+  graded to approximately 4000K neutral white - NOT warm amber or orange.
+  Correct any existing warm/orange color cast in the lighting and walls so
+  whites and light-colored surfaces read neutral, not yellow." Apply this in
+  addition to, not instead of, the window-glow rule above.
 
 ======================================================================
 ABSOLUTE RULES: ENHANCE ONLY, NEVER REDESIGN

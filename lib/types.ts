@@ -2,7 +2,14 @@ export type JobStatus = "uploaded" | "processing_preview" | "preview_ready" | "p
 
 export type StyleMode = "full_5star_fix"
 
-export type ModelProvider = "openai_1_5" | "nano_banana_pro" | "openai_2" | "flux_2_pro" | "nano_banana" | "gemini_3_pro"
+export type ModelProvider =
+  | "openai_1_5"
+  | "nano_banana_pro"
+  | "openai_2"
+  | "openai_2_5"
+  | "flux_2_pro"
+  | "nano_banana"
+  | "gemini_3_pro"
 
 export type PhotoClassification = "indoor" | "outdoor" | "unknown"
 
@@ -121,6 +128,11 @@ export interface UserImage {
     height?: number
     file_size?: number
     mime_type?: string
+    /** Specific space label from the vision classifier, e.g. "laundry room". */
+    room_type?: string
+    /** How the classification was decided: user override, filename heuristic, or vision model. */
+    classification_source?: "user" | "filename" | "gemini" | "openai"
+    classification_confidence?: number
   }
   is_original: boolean
   source_model: ModelProvider | null

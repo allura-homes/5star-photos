@@ -284,7 +284,10 @@ export function ImageUploader({
         if (result.error) throw new Error(result.error)
 
         anyPaid = true
-        setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, status: "done" } : u)))
+        const detected = result.image?.classification ?? upload.classification
+        setUploads((prev) =>
+          prev.map((u) => (u.id === upload.id ? { ...u, status: "done", classification: detected } : u)),
+        )
       } catch (err) {
         console.error("[v0] Upload error:", err)
         setUploads((prev) =>
