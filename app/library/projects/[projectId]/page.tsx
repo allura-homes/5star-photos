@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
+import { buildBatchTransformHref } from "@/lib/batch-transform-handoff"
 import Image from "next/image"
 import Link from "next/link"
 import { AppShell } from "@/components/app-shell"
@@ -501,8 +502,7 @@ export default function ProjectDetailPage() {
                     onClick={() => {
                       const selectedArray = Array.from(selectedImages)
                       if (selectedArray.length > 0) {
-                        sessionStorage.setItem("batch_transform_ids", JSON.stringify(selectedArray))
-                        router.push("/batch-transform")
+                    router.push(buildBatchTransformHref(selectedArray))
                       }
                     }}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-magenta-violet text-white font-medium hover:scale-105 transition-all"
