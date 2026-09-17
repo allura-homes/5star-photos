@@ -1095,6 +1095,7 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
       custom_prompt, // Keep for backwards compatibility
       variation_number = 1,
       room_type_guess,
+      classification,
       apply_watermark = true,
       style_mode, // Accept style_mode to determine if AI should be used
     } = body as any
@@ -1263,7 +1264,11 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
           const roomGuessLower = (room_type_guess || "").toLowerCase()
           const promptLower = (promptToUse || "").toLowerCase()
           const isExplicitlyOutdoor = outdoorRoomTypes.some(type => roomGuessLower.includes(type) || promptLower.includes(type))
-          const isIndoor = !isExplicitlyOutdoor
+          // The stored classification comes from the vision classifier (or a
+          // manual user override) and is the most reliable signal we have;
+          // only fall back to keyword sniffing when it's genuinely unknown.
+          const isIndoor =
+            classification === "indoor" ? true : classification === "outdoor" ? false : !isExplicitlyOutdoor
           
           const nanoBananaPrompt = isIndoor 
             ? `${promptToUse}\n\nCRITICAL LIGHTING OVERRIDE FOR THIS MODEL: This model tends to produce overly warm, amber, or orange lighting. COUNTERACT this by ensuring:\n- Color temperature stays NEUTRAL to COOL (4000-4500K) - think bright daylight, NOT cozy candlelight\n- Walls MUST remain PURE WHITE or their original color with NO orange/amber color cast\n- Avoid any golden, warm, or amber tones on walls and ceilings\n- Light should feel BRIGHT, CLEAN, and FRESH like morning sunlight through windows\n- NO glowing amber lamps or heavy warm atmospheric lighting\n- Think: CLEAN, CRISP real estate photography, NOT moody interior design magazine`

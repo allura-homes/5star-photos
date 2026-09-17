@@ -196,6 +196,12 @@ function BatchTransformContent() {
     // Generate prompt: use art-director if custom preferences, otherwise use default
     let imagePrompt: string
     const classification = batchImage.image.classification || "indoor"
+    // Prefer the vision classifier's specific space label (set at upload time)
+    // over any legacy filename-derived guess.
+    const roomTypeHint =
+      batchImage.image.metadata?.room_type ||
+      (batchImage.image as UserImage & { room_type_guess?: string }).room_type_guess ||
+      ""
     
     if (hasCustomPreferences && customPreferences) {
       // Call art-director API to generate custom prompt based on preferences
@@ -205,7 +211,7 @@ function BatchTransformContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             classification,
-            room_type_guess: (batchImage.image as UserImage & { room_type_guess?: string }).room_type_guess || "",
+            room_type_guess: roomTypeHint,
             user_preferences: customPreferences,
             original_url: batchImage.image.storage_path,
             filename: batchImage.image.original_filename,
@@ -231,7 +237,7 @@ function BatchTransformContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             classification,
-            room_type_guess: (batchImage.image as UserImage & { room_type_guess?: string }).room_type_guess || "",
+            room_type_guess: roomTypeHint,
             original_url: batchImage.image.storage_path,
             filename: batchImage.image.original_filename,
           }),
@@ -264,9 +270,10 @@ function BatchTransformContent() {
             filename: batchImage.image.original_filename,
             model: modelConfig.model,
             provider: modelConfig.model,
-            variation_number: variationNumber,
-            classification: batchImage.image.classification,
-            image_prompt: imagePrompt,
+          variation_number: variationNumber,
+          classification: batchImage.image.classification,
+          room_type_guess: roomTypeHint,
+          image_prompt: imagePrompt,
             use_ai_models: true,
           }),
         }, EDIT_IMAGE_TIMEOUT)

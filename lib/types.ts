@@ -128,6 +128,11 @@ export interface UserImage {
     height?: number
     file_size?: number
     mime_type?: string
+    /** Specific space label from the vision classifier, e.g. "laundry room". */
+    room_type?: string
+    /** How the classification was decided: user override, filename heuristic, or vision model. */
+    classification_source?: "user" | "filename" | "gemini" | "openai"
+    classification_confidence?: number
   }
   is_original: boolean
   source_model: ModelProvider | null

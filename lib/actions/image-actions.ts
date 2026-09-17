@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import type { UserImage, PhotoClassification } from "@/lib/types"
 import { chargeForAction } from "@/lib/credits"
 import { CREDIT_COSTS, type PlanId } from "@/lib/plans"
+import { classifyScene, classifySceneFromUrl } from "@/lib/vision/classify-scene"
 
 // Safe revalidation helper - revalidatePath doesn't work in v0 preview
 function safeRevalidate(_path: string) {
@@ -250,8 +251,21 @@ export async function uploadImage(
 
   try {
     console.log("[v0] uploadImage: Uploading to path:", storagePath)
-    const publicUrl = await uploadToStorage(base64Data, storagePath, fileType || "image/jpeg")
+    // Run the storage upload and the vision classification in parallel - the
+    // filename heuristic returns "unknown" for every camera file (IMG_1234.JPG),
+    // so we look at the pixels while the bytes are already in hand.
+    const needsVision = classification === "unknown"
+    const [publicUrl, scene] = await Promise.all([
+      uploadToStorage(base64Data, storagePath, fileType || "image/jpeg"),
+      needsVision ? classifyScene(base64Data, fileType || "image/jpeg") : Promise.resolve(null),
+    ])
     console.log("[v0] uploadImage: Upload successful, URL:", publicUrl?.substring(0, 80) + "...")
+    if (needsVision) console.log("[v0] uploadImage: vision classification:", scene)
+
+    const finalClassification: PhotoClassification = scene?.classification ?? classification
+    const classificationMeta = scene
+      ? { room_type: scene.roomType, classification_source: scene.source, classification_confidence: scene.confidence }
+      : { classification_source: classification === "unknown" ? undefined : "filename" }
 
     // Create image record
     const { data: image, error } = await supabase
@@ -262,8 +276,8 @@ export async function uploadImage(
         storage_path: publicUrl, // Store full URL for direct use in <Image> component
         thumbnail_path: null,
         original_filename: fileName,
-        classification,
-        metadata: { fileType, uploadedAt: new Date().toISOString(), storagePath }, // Keep relative path in metadata for storage operations
+        classification: finalClassification,
+        metadata: { fileType, uploadedAt: new Date().toISOString(), storagePath, ...classificationMeta }, // Keep relative path in metadata for storage operations
         is_original: true,
         source_model: null,
         transformation_prompt: null,
@@ -441,7 +455,18 @@ export async function updateImageClassification(
   }
   const user = session.user
 
-  const { error } = await supabase.from("images").update({ classification }).eq("id", imageId).eq("user_id", user.id)
+  const { data: existing } = await supabase
+    .from("images")
+    .select("metadata")
+    .eq("id", imageId)
+    .eq("user_id", user.id)
+    .single()
+
+  const { error } = await supabase
+    .from("images")
+    .update({ classification, metadata: { ...(existing?.metadata ?? {}), classification_source: "user" } })
+    .eq("id", imageId)
+    .eq("user_id", user.id)
 
   if (error) {
     return { success: false, error: error.message }
@@ -449,6 +474,58 @@ export async function updateImageClassification(
 
   safeRevalidate("/library")
   return { success: true }
+}
+
+// Run the vision classifier on an existing image (backfill for "unknown" rows).
+// Never overrides a classification the user set by hand.
+export async function reclassifyImage(
+  imageId: string,
+): Promise<{ classification: PhotoClassification; roomType?: string; error?: string }> {
+  const supabase = await createClient()
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.user) {
+    return { classification: "unknown", error: "Not authenticated" }
+  }
+
+  const { data: image, error } = await supabase
+    .from("images")
+    .select("id, storage_path, classification, metadata")
+    .eq("id", imageId)
+    .eq("user_id", session.user.id)
+    .single()
+  if (error || !image) return { classification: "unknown", error: error?.message ?? "Image not found" }
+
+  const metadata = (image.metadata ?? {}) as UserImage["metadata"]
+  if (metadata.classification_source === "user") {
+    return { classification: image.classification, roomType: metadata.room_type }
+  }
+
+  const scene = await classifySceneFromUrl(image.storage_path).catch((err) => {
+    console.error("[v0] reclassifyImage failed:", err instanceof Error ? err.message : err)
+    return null
+  })
+  if (!scene) return { classification: image.classification, roomType: metadata.room_type, error: "Could not classify" }
+
+  const { error: updateError } = await supabase
+    .from("images")
+    .update({
+      classification: scene.classification,
+      metadata: {
+        ...metadata,
+        room_type: scene.roomType,
+        classification_source: scene.source,
+        classification_confidence: scene.confidence,
+      },
+    })
+    .eq("id", imageId)
+    .eq("user_id", session.user.id)
+  if (updateError) return { classification: image.classification, error: updateError.message }
+
+  safeRevalidate("/library")
+  return { classification: scene.classification, roomType: scene.roomType }
 }
 
 // Delete an image
