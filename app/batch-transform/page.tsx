@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useCallback, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { AppShell } from "@/components/app-shell"
+import { readBatchTransformIds, clearBatchTransformIds } from "@/lib/batch-transform-handoff"
 import { getImageById } from "@/lib/actions/image-actions"
 import { startTransform, finishTransform, getPlanModels } from "@/lib/actions/transform-actions"
 import { InsufficientCreditsDialog, type CreditShortfall } from "@/components/billing/insufficient-credits-dialog"
@@ -72,11 +73,32 @@ interface BatchImage {
   totalVariations: number
 }
 
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin mx-auto mb-4" />
+        <p className="text-white">Loading images...</p>
+      </div>
+    </div>
+  )
+}
+
 export default function BatchTransformPage() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <BatchTransformContent />
+    </Suspense>
+  )
+}
+
+function BatchTransformContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { profile, user, refreshProfile } = useAuthContext()
   const [batchImages, setBatchImages] = useState<BatchImage[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [noSelection, setNoSelection] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [overallProgress, setOverallProgress] = useState(0)
   const [startTime, setStartTime] = useState<Date | null>(null)
@@ -90,17 +112,16 @@ export default function BatchTransformPage() {
   const [customPreferences, setCustomPreferences] = useState<EnhancementPreferences | null>(null)
   const [hasCustomPreferences, setHasCustomPreferences] = useState(false)
 
-  // Load batch image IDs from sessionStorage
+  // Image ids arrive in the URL (primary) or sessionStorage (fallback).
   useEffect(() => {
-    const storedIds = sessionStorage.getItem("batch_transform_ids")
-    if (!storedIds) {
-      router.push("/library")
+    const imageIds = readBatchTransformIds(searchParams)
+    if (imageIds.length === 0) {
+      setNoSelection(true)
+      setIsLoading(false)
       return
     }
-
-    const imageIds: string[] = JSON.parse(storedIds)
     loadBatchImages(imageIds)
-  }, [router])
+  }, [searchParams])
 
   async function loadBatchImages(imageIds: string[]) {
     setIsLoading(true)
@@ -345,7 +366,7 @@ export default function BatchTransformPage() {
     // Check if all done
     if (completed === batchImages.length) {
       setIsProcessing(false)
-      sessionStorage.removeItem("batch_transform_ids")
+      clearBatchTransformIds()
     }
   }, [batchImages, isProcessing])
 
@@ -392,13 +413,29 @@ export default function BatchTransformPage() {
   const isComplete = !isProcessing && (completedCount + errorCount) === batchImages.length && batchImages.length > 0
 
   if (isLoading) {
+    return <LoadingScreen />
+  }
+
+  if (noSelection) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin mx-auto mb-4" />
-          <p className="text-white">Loading images...</p>
+      <AppShell>
+        <div className="max-w-xl mx-auto glass-card rounded-2xl p-8 text-center flex flex-col items-center gap-4">
+          <div className="w-14 h-14 rounded-xl bg-fuchsia-500/20 flex items-center justify-center">
+            <Sparkles className="w-7 h-7 text-fuchsia-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-white">No photos selected</h1>
+          <p className="text-slate-400 text-pretty">
+            Select the photos you want to enhance in your library, then choose Batch Transform.
+          </p>
+          <Link
+            href="/library"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl gradient-magenta-violet text-white font-medium hover:scale-105 transition-transform"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Go to library
+          </Link>
         </div>
-      </div>
+      </AppShell>
     )
   }
 

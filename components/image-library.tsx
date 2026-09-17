@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { buildBatchTransformHref } from "@/lib/batch-transform-handoff"
 import Image from "next/image"
 import { useDropzone } from "react-dropzone"
 import { getUserImages, deleteImage, deleteImages, updateImageClassification, uploadImage } from "@/lib/actions/image-actions"
@@ -905,11 +906,9 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
               {/* Batch Transform */}
               <button
                 onClick={() => {
-                  // Store selected IDs and navigate to batch transform page
                   const selectedArray = Array.from(selectedImages)
                   if (selectedArray.length > 0) {
-                    sessionStorage.setItem("batch_transform_ids", JSON.stringify(selectedArray))
-                    router.push("/batch-transform")
+                    router.push(buildBatchTransformHref(selectedArray))
                   }
                 }}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-magenta-violet text-white font-medium hover:scale-105 transition-all"
