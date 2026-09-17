@@ -2,53 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireUser } from "@/lib/api-auth"
 import { chargeForAction, refundCredits } from "@/lib/credits"
 import { CREDIT_COSTS } from "@/lib/plans"
+import { isDataUrl, persistDataUrlAsVariation } from "@/lib/storage/upload-data-url"
 
 export const maxDuration = 60
-
-// Upload to Supabase Storage using base64 encoded body
-// This works around v0's fetch binary issues by sending base64 in the URL path
-async function uploadToSupabaseStorage(
-  storagePath: string, 
-  base64Data: string, 
-  contentType: string
-): Promise<string> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error("Supabase not configured")
-  }
-  
-  // Convert base64 to binary using atob and Uint8Array
-  const binaryString = atob(base64Data)
-  const bytes = new Uint8Array(binaryString.length)
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-  
-  // Use Blob for the upload body - this works better in v0 runtime
-  const blob = new Blob([bytes], { type: contentType })
-  
-  const uploadUrl = `${supabaseUrl}/storage/v1/object/original-uploads/${storagePath}`
-  
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${supabaseKey}`,
-      "Content-Type": contentType,
-      "x-upsert": "true",
-    },
-    body: blob,
-  })
-  
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Storage upload failed: ${response.status} ${errorText}`)
-  }
-
-  // Return the public URL
-  return `${supabaseUrl}/storage/v1/object/public/original-uploads/${storagePath}`
-}
 
 // Helper to make Supabase REST API calls directly
 async function supabaseRest(endpoint: string, options: { method?: string; body?: unknown } = {}) {
@@ -145,32 +101,14 @@ export async function POST(request: NextRequest) {
 
     let finalStoragePath = imageData
 
-    // Check if imageData is a base64 data URL and needs to be uploaded
-    if (imageData.startsWith("data:image/")) {
-      console.log("[v0] Uploading base64 image to Vercel Blob...")
-      
+    // Normally /api/edit-image has already stored the result and sent a URL;
+    // this branch remains for older clients and the storage-failure fallback.
+    if (isDataUrl(imageData)) {
+      console.log("[v0] Uploading base64 image to storage, length:", imageData.length)
+
       try {
-        // Extract base64 data
-        const matches = imageData.match(/^data:image\/(\w+);base64,(.+)$/)
-        if (!matches) {
-          return NextResponse.json({ error: "Invalid base64 image format" }, { status: 400 })
-        }
-
-        const imageFormat = matches[1]
-        const base64Data = matches[2]
-        console.log("[v0] Base64 format:", imageFormat, "data length:", base64Data.length)
-        
-        // Generate unique filename for storage
-        const timestamp = Date.now()
-        const randomId = Math.random().toString(36).substring(2, 8)
-        const storagePath = `${userId}/variations/variation-${timestamp}-${randomId}.${imageFormat === "jpeg" ? "jpg" : imageFormat}`
-        console.log("[v0] Uploading to storage path:", storagePath)
-
-        // Upload to Supabase Storage
-        const publicUrl = await uploadToSupabaseStorage(storagePath, base64Data, `image/${imageFormat}`)
-        console.log("[v0] Upload successful, URL:", publicUrl.substring(0, 100))
-
-        finalStoragePath = publicUrl
+        finalStoragePath = await persistDataUrlAsVariation(userId, imageData)
+        console.log("[v0] Upload successful, URL:", finalStoragePath.substring(0, 100))
       } catch (uploadError) {
         // Capture specific error during upload
         const errMsg = uploadError instanceof Error ? uploadError.message : String(uploadError)
