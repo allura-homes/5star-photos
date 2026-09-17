@@ -45,7 +45,7 @@ export const MODELS: ModelInfo[] = [
     label: "V4",
     description: "OpenAI's GPT Image 2.5. Beta model, included for everyone during the beta period.",
     active: true,
-    modelId: "gpt-image-2.5",
+    modelId: "gpt-image-2.5-sunburst",
   },
 ]
 
