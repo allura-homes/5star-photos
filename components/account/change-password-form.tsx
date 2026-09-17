@@ -5,8 +5,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, Lock, Eye, EyeOff } from "lucide-react"
-
-const MIN_PASSWORD_LENGTH = 8
+import { MIN_PASSWORD_LENGTH, PASSWORD_HINT, getPasswordError, isPasswordValid } from "@/lib/password-policy"
 
 export function ChangePasswordForm() {
   const [open, setOpen] = useState(false)
@@ -16,7 +15,8 @@ export function ChangePasswordForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const formValid = password.length >= MIN_PASSWORD_LENGTH && password === confirm
+  const passwordError = password.length > 0 ? getPasswordError(password) : null
+  const formValid = isPasswordValid(password) && password === confirm
 
   const reset = () => {
     setOpen(false)
@@ -99,7 +99,7 @@ export function ChangePasswordForm() {
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
-        <p className="text-xs text-slate-500">At least {MIN_PASSWORD_LENGTH} characters.</p>
+        <p className={`text-xs ${passwordError ? "text-red-400" : "text-slate-500"}`}>{passwordError ?? PASSWORD_HINT}</p>
       </div>
 
       <div className="flex flex-col gap-1.5">

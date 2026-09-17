@@ -15,7 +15,10 @@ import Link from "next/link"
 export default function LibraryPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isAuthenticated, isLoading: authLoading, profile, refreshProfile } = useAuthContext()
+  const { isAuthenticated, isLoading: authLoading, isProfileLoading, profile, refreshProfile } = useAuthContext()
+  // While the profile row is still loading we must not present a false "0".
+  // The server action is the real credit gate, so let it decide in that window.
+  const tokenBalance = profile ? profile.tokens : isProfileLoading ? Number.POSITIVE_INFINITY : 0
   const [showUploader, setShowUploader] = useState(false)
   const [showAirbnbImport, setShowAirbnbImport] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -88,7 +91,13 @@ export default function LibraryPage() {
               title="Credits available"
             >
               <Coins className="w-4 h-4 text-amber-400" aria-hidden="true" />
-              <span className="text-white font-medium">{profile?.tokens || 0}</span>
+              {profile ? (
+                <span className="text-white font-medium">{profile.tokens}</span>
+              ) : isProfileLoading ? (
+                <Loader2 className="w-4 h-4 text-slate-400 animate-spin" aria-label="Loading credits" />
+              ) : (
+                <span className="text-white font-medium">0</span>
+              )}
               <span className="text-slate-400 text-sm">credits</span>
             </Link>
 
@@ -145,7 +154,7 @@ export default function LibraryPage() {
               <ImageUploader
                 onComplete={handleUploadComplete}
                 onCancel={() => setShowUploader(false)}
-                tokenBalance={profile?.tokens || 0}
+                tokenBalance={tokenBalance}
                 plan={profile?.plan ?? "free"}
                 onCreditsSpent={refreshProfile}
               />
@@ -154,7 +163,7 @@ export default function LibraryPage() {
               key={refreshKey}
               onSelectImage={handleSelectImage}
               onUploadClick={() => setShowUploader(true)}
-              tokenBalance={profile?.tokens || 0}
+              tokenBalance={tokenBalance}
             />
           ))}
 

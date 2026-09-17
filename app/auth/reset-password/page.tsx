@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react"
-
-const MIN_PASSWORD_LENGTH = 8
+import { MIN_PASSWORD_LENGTH, PASSWORD_HINT, getPasswordError, isPasswordValid } from "@/lib/password-policy"
 
 function ResetPasswordContent() {
   const router = useRouter()
@@ -45,7 +44,8 @@ function ResetPasswordContent() {
     return () => subscription.unsubscribe()
   }, [])
 
-  const formValid = password.length >= MIN_PASSWORD_LENGTH && password === confirm
+  const passwordError = password.length > 0 ? getPasswordError(password) : null
+  const formValid = isPasswordValid(password) && password === confirm
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -141,7 +141,9 @@ function ResetPasswordContent() {
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500">At least {MIN_PASSWORD_LENGTH} characters.</p>
+                  <p className={`text-xs ${passwordError ? "text-red-400" : "text-slate-500"}`}>
+                {passwordError ?? PASSWORD_HINT}
+              </p>
                 </div>
 
                 <div className="flex flex-col gap-2">
