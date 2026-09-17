@@ -73,7 +73,7 @@ function buildUserPreferencesPrompt(preferences: EnhancementPreferences): string
   // Enhance lawn (outdoor)
   if (preferences.enhanceLawn) {
     additions.push(
-      "LAWN ENHANCEMENT: Make any visible grass appear LUSH, THICK, and VIBRANT GREEN. Fill in any bare patches or brown spots. The lawn should look professionally maintained and healthy.",
+      "LAWN ENHANCEMENT: Apply modest color correction only to grass blades already visible. Preserve every bare patch, soil bed, mulch area, gravel area, and lawn boundary exactly. Do not add grass or increase its coverage or density. If no grass is visible, skip this enhancement.",
     )
   }
 
@@ -185,8 +185,8 @@ CRITICAL MISSION: PRESERVE LAYOUT, TRANSFORM QUALITY
 ======================================================================
 
 Your job is to make photos DRAMATICALLY more beautiful while keeping the composition and elements exactly the same.
-The text-to-image model CANNOT see the original photo—it only sees your words.
-You must describe what exists SO PRECISELY that the AI recreates it EXACTLY, but with WORLD-CLASS lighting, clarity, and that ineffable quality that separates amateur snapshots from professional architectural photography.
+The image-editing model receives the original photograph alongside your instructions.
+Describe localized photographic adjustments to that exact image, not a reconstruction or redesigned view. Preserve all ground boundaries, paint colors, surface finishes, and building geometry; prefer a subtle edit over an invented improvement.
 
 ======================================================================
 GOLDEN RULE: DESCRIBE ONLY WHAT YOU SEE
@@ -249,7 +249,7 @@ ABSOLUTE RULES: ENHANCE ONLY, NEVER REDESIGN
 - Do NOT add ANY features
 - ONLY enhance lighting, sharpness, and color quality
 - FIX surface imperfections you can SEE (paint chips, stains, etc.)
-- FILL IN patchy grass ONLY IF grass exists
+- Color-correct existing vegetation ONLY; preserve bare patches and exact vegetation coverage
 - REMOVE reflections of people/photographers in mirrors, windows, and reflective surfaces
 - REMOVE visible photographer reflections in any glass, chrome, or shiny surfaces
 
@@ -310,8 +310,8 @@ For EACH element below, ONLY include if you SEE it in the photo:
 
 --- IF YOU SEE A LAWN/GRASS ---
 Describe exactly where the lawn is located and its current condition.
-Instruct: "The lawn must appear LUSH, THICK, and VIBRANT GREEN with no bare patches or brown spots."
-Keep the same lawn SHAPE and BOUNDARIES.
+Instruct: "Color-correct only existing grass. Preserve its exact coverage and boundaries, including bare patches. Do not add, extend, or thicken grass."
+Identify soil, mulch, gravel, and paving separately; keep each material unchanged.
 
 --- IF YOU SEE A DRIVEWAY ---
 Describe the exact material (concrete, asphalt, pavers, gravel) and location.
@@ -394,7 +394,7 @@ LIVING ROOMS — "The Showcase"
 EXTERIORS — "The First Impression"
 - Golden hour quality light, even if the original was midday harsh
 - Sky should be that perfect vibrant blue with light clouds
-- Landscaping should glow with healthy, lush color
+- Color-correct existing vegetation only; preserve its coverage and every soil, mulch, gravel, and paved region
 - Architecture should have dimensional shadows that show depth
 - The mood: curb appeal that stops traffic — "I need to see inside this house"
 
@@ -947,7 +947,7 @@ function getDefaultPromptForFilename(filename: string, preferences?: Enhancement
     lowerName.includes("yard") ||
     lowerName.includes("deck")
   ) {
-    basePrompt = "Ultra-realistic professional real estate photograph. Preserve EXACTLY: all architectural elements, pool shape and features (including any connected jacuzzi/spa), furniture positions (items in sun stay in sun, items under cover stay under cover), landscaping variety and maturity, driveway, and fence between properties. LAWN must appear LUSH, THICK, and VIBRANT GREEN. ALL painted surfaces must appear FRESHLY PAINTED and IMMACULATE. Enhance ONLY: lighting quality, color vibrancy, sharpness, and clarity. Do NOT add, remove, move, or redesign any elements. Professional real estate photography quality with bright, crisp natural lighting."
+    basePrompt = "Enhance only the existing exterior photograph with natural exposure, accurate color, clarity, and noise reduction. Preserve the exact camera view, architecture, surface materials, paint colors, and finishes. Keep bare soil, mulch, gravel, and paving unchanged; preserve the exact coverage of existing vegetation. Do not add, extend, repaint, or redesign anything."
   } else if (
     lowerName.includes("kitchen") ||
     lowerName.includes("bedroom") ||
@@ -958,7 +958,7 @@ function getDefaultPromptForFilename(filename: string, preferences?: Enhancement
   ) {
     basePrompt = "Ultra-realistic professional real estate photograph. Preserve EXACTLY: all furniture pieces in their exact positions, all architectural details, wall colors, flooring materials, window views, and decorative elements. Enhance ONLY: lighting quality to be bright and welcoming, color accuracy, sharpness, and clarity. Do NOT add, remove, move, or redesign any elements. Professional real estate photography quality."
   } else {
-    basePrompt = "Ultra-realistic professional photograph. Preserve ALL elements exactly as they appear - furniture positions, architectural features, landscaping, driveways, fences, and structural elements. LAWN must appear LUSH and GREEN. ALL paint must appear FRESH and IMMACULATE. Enhance ONLY: lighting quality, color vibrancy, sharpness, and clarity. Do NOT add, remove, move, or redesign any elements. Professional photography quality with bright, natural lighting."
+    basePrompt = "Enhance the supplied photograph with natural exposure, accurate color, clarity, and noise reduction only. Preserve every visible object, material, paint color, finish, ground surface, and vegetation boundary exactly. Preserve the original camera view. Do not assume any feature exists from the filename, and do not add, remove, repaint, or redesign elements."
   }
 
   // CRITICAL: If user provided special instructions, ALWAYS include them

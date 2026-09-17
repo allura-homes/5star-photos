@@ -6,6 +6,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { AppShell } from "@/components/app-shell"
+import { friendlyModelError } from "@/lib/model-error"
 import { readBatchTransformIds, clearBatchTransformIds } from "@/lib/batch-transform-handoff"
 import { getImageById } from "@/lib/actions/image-actions"
 import { startTransform, finishTransform, getPlanModels } from "@/lib/actions/transform-actions"
@@ -33,7 +34,7 @@ import {
 type BatchModel = { model: ModelProvider; label: string }
 
 // Timeouts for different API calls
-const EDIT_IMAGE_TIMEOUT = 200000 // 200s for image generation (can be slow)
+const EDIT_IMAGE_TIMEOUT = 240000 // Includes image generation, fidelity review, and storage.
 const ART_DIRECTOR_TIMEOUT = 30000 // 30s for art director
 const SAVE_VARIATION_TIMEOUT = 30000 // 30s for saving
 
@@ -309,10 +310,7 @@ function BatchTransformContent() {
             modelErrors.push(`${modelConfig.label}: no image returned`)
           }
         } else {
-          // Surface the real reason this model failed (e.g. OpenAI 403 "must be
-          // verified to use gpt-image-2") instead of silently dropping it.
-          const errText = await response.text().catch(() => "")
-          const reason = errText.slice(0, 200) || `HTTP ${response.status}`
+          const reason = await friendlyModelError(response)
           modelErrors.push(`${modelConfig.label}: ${reason}`)
           console.log(`[v0] batch model ${modelConfig.label} (${modelConfig.model}) failed:`, reason)
         }
@@ -417,6 +415,9 @@ function BatchTransformContent() {
 
   const completedCount = batchImages.filter(img => img.status === "complete").length
   const errorCount = batchImages.filter(img => img.status === "error").length
+  const partialCount = batchImages.filter(img => img.status === "complete" && img.completedVariations < img.totalVariations).length
+  const savedVariationCount = batchImages.reduce((total, img) => total + img.completedVariations, 0)
+  const requestedVariationCount = batchImages.reduce((total, img) => total + img.totalVariations, 0)
   const isComplete = !isProcessing && (completedCount + errorCount) === batchImages.length && batchImages.length > 0
 
   if (isLoading) {
@@ -483,14 +484,14 @@ function BatchTransformContent() {
               <div>
                 <h2 className="text-lg font-semibold text-white">
                   {isComplete 
-                    ? "Batch Processing Complete!" 
+                    ? (partialCount > 0 || errorCount > 0 ? "Batch finished with issues" : "Batch Processing Complete!")
                     : isProcessing 
                       ? `Processing ${batchImages.length} images in parallel...`
                       : "Ready to Transform"}
                 </h2>
                 <p className="text-sm text-slate-400">
                   {isComplete 
-                    ? `${completedCount} images transformed successfully${errorCount > 0 ? `, ${errorCount} failed` : ""}`
+                    ? `${savedVariationCount} of ${requestedVariationCount} variations saved${partialCount > 0 ? ` · ${partialCount} images partially completed` : ""}${errorCount > 0 ? ` · ${errorCount} images failed` : ""}`
                     : isProcessing
                       ? `${completedCount} of ${batchImages.length} complete`
                       : `${planModels.length} AI models per image · ${batchImages.length * CREDIT_COSTS.transform} credits total (${CREDIT_COSTS.transform} each)`}
@@ -635,7 +636,7 @@ function BatchTransformContent() {
                     <>
                       <Check className="w-4 h-4 text-green-400" />
                       <span className="text-sm text-green-400">
-                        Complete ({batchImage.completedVariations} variations saved)
+                        {batchImage.completedVariations < batchImage.totalVariations ? "Partial result" : "Complete"} ({batchImage.completedVariations}/{batchImage.totalVariations} variations saved)
                       </span>
                     </>
                   )}
@@ -700,10 +701,12 @@ function BatchTransformContent() {
             <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
               <Check className="w-8 h-8 text-green-400" />
             </div>
-            <h3 className="text-xl font-semibold text-white mb-2">All Done!</h3>
+            <h3 className="text-xl font-semibold text-white mb-2">
+              {partialCount > 0 || errorCount > 0 ? "Finished with partial or failed results" : "All Done!"}
+            </h3>
             <p className="text-slate-400 mb-6">
-              {completedCount} of {batchImages.length} images were successfully transformed.
-              Each image now has up to {planModels.length} AI-enhanced variations.
+              {savedVariationCount} of {requestedVariationCount} requested variations were saved across {completedCount} of {batchImages.length} images.
+              {(partialCount > 0 || errorCount > 0) && " See the per-model messages above for details."}
             </p>
             <div className="flex items-center justify-center gap-4">
               <Link

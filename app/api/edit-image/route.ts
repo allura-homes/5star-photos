@@ -3,6 +3,9 @@ import { Buffer } from "buffer"
 import { requireUser } from "@/lib/api-auth"
 import { isDataUrl, persistDataUrlAsVariation } from "@/lib/storage/upload-data-url"
 import { createDirectClient } from "@/lib/supabase/direct"
+import { buildFaithfulEditPrompt } from "@/lib/faithful-edit-prompt"
+import { PropertyFidelityError, verifyPropertyFidelity } from "@/lib/vision/verify-property-fidelity"
+import { MODELS } from "@/lib/constants/models"
 
 interface CloudinaryEdits {
   brightness: number
@@ -107,115 +110,8 @@ async function generateOpenAIImage(originalUrl: string, imagePrompt: string, mod
   const MAX_RETRIES = 5
   const BASE_DELAY = 3000 // 3 seconds
 
-  const isMiniModel = model === "gpt-image-1-mini"
-  
-  // Check if the prompt contains user instructions to ADD elements (virtual staging)
-  const isVirtualStaging = imagePrompt && (
-    imagePrompt.toLowerCase().includes("insert") ||
-    imagePrompt.toLowerCase().includes("add ") ||
-    imagePrompt.toLowerCase().includes("place ") ||
-    imagePrompt.toLowerCase().includes("put ") ||
-    imagePrompt.toLowerCase().includes("include ") ||
-    imagePrompt.toLowerCase().includes("stage ") ||
-    imagePrompt.toLowerCase().includes("furnish") ||
-    imagePrompt.toLowerCase().includes("USER SPECIAL INSTRUCTIONS")
-  )
-
-  const baseInstructions = isMiniModel
-    ? `CRITICAL: THIS IS AN IMAGE EDITING TASK - NOT IMAGE GENERATION.
-
-YOU MUST OUTPUT THE EXACT SAME PHOTOGRAPH WITH ONLY LIGHTING/COLOR ADJUSTMENTS.
-
-STRICT RULES:
-- The OUTPUT must show the IDENTICAL scene as the INPUT
-- Indoor photo = Indoor photo of SAME room
-- Bedroom = SAME bedroom, SAME furniture, SAME walls
-- Kitchen = SAME kitchen
-- Outdoor = SAME outdoor location
-- DO NOT generate a different image
-- DO NOT substitute scenes
-- DO NOT change room types
-- DO NOT add or remove objects
-
-ONLY ALLOWED: Brightness, contrast, color balance, sharpness improvements.
-
-VERIFY: Your output must be recognizable as the SAME photograph.`
-    : isVirtualStaging 
-    ? `CRITICAL INSTRUCTION: You are performing VIRTUAL STAGING on this real estate photo.
-
-ABSOLUTE REQUIREMENTS:
-1. PRESERVE the existing property EXACTLY - same building, same angle, same perspective
-2. PRESERVE all permanent architectural elements - walls, fences, windows, doors, etc.
-3. ADD ONLY the specifically requested furniture/staging elements
-4. The staging must look PHOTOREALISTIC, like items were actually there
-5. Match lighting and shadows to the existing scene
-
-STRICTLY FORBIDDEN - DO NOT DO THESE:
-- Adding doors, windows, or openings that don't exist
-- Removing or moving walls, doors, windows, or any architectural elements
-- Changing the room layout or floor plan
-- Adding appliances or fixtures not requested
-- Changing paint colors or finishes unless requested
-- Moving existing furniture unless requested
-
-MUST PRESERVE EXACTLY:
-- All walls and their positions
-- All existing doors and windows (same number, same positions)
-- The building/property structure
-- Fences, gates, pergolas
-- Landscaping and hardscape
-- Sky and background
-- Camera angle and perspective
-- Existing appliances and fixtures
-
-YOU MAY ADD (ONLY if explicitly requested):
-- Furniture (chairs, tables, loungers, etc.)
-- Wall art and decorative elements
-- Outdoor accessories (umbrellas, cushions, planters)
-- Staging props
-
-QUALITY REQUIREMENTS:
-- Items must look photorealistic, not pasted in
-- Shadows and lighting must match the scene
-- Scale must be accurate
-- Style and colors must match any reference image description provided`
-    : `CRITICAL INSTRUCTION: You are performing an IMAGE EDIT operation, NOT generating a new image.
-
-ABSOLUTE REQUIREMENTS:
-1. The output MUST be the EXACT SAME PHOTOGRAPH as the input, with ONLY quality enhancements
-2. Same room/scene, same furniture, same angle, same everything
-3. If the input shows a bedroom, the output MUST show that EXACT bedroom
-4. If the input shows a kitchen, the output MUST show that EXACT kitchen
-5. NEVER substitute a different photo or scene
-
-STRICTLY FORBIDDEN - WILL RESULT IN FAILURE:
-- Generating a different property or scene than the input
-- Replacing an indoor photo with an outdoor photo (or vice versa)
-- Adding or removing furniture, fixtures, or architectural elements
-- Changing the room type (e.g., bedroom to living room)
-- Adding grass, lawn, or turf to concrete, pavers, brick, decking, gravel, or any hard surface where it does not already exist
-- Adding outdoor furniture, umbrellas, planters, dining sets, lounge chairs, or any staging props not in the original photo, UNLESS the user's instructions below explicitly ask for them
-- Adding pools, hot tubs, or any objects not in the original
-- Adding windows, doors, skylights, or any openings that do not exist in the original photo
-- Removing walls, fences, pergolas, or structural elements
-- Changing the camera angle or perspective
-
-ALLOWED ENHANCEMENTS ONLY:
-- Improve lighting and exposure
-- Enhance color vibrancy and white balance
-- Increase sharpness and clarity
-- Make existing grass/plants more lush (if already present)
-- Improve sky appearance (if sky is visible)
-- Reduce noise and grain
-- Boost architectural details
-
-REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE SAME PHOTO.`
-
-  // Combine base instructions with Art Director prompt if provided
-  const editingPrompt =
-    imagePrompt && !isMiniModel
-      ? `${baseInstructions}\n\n${isVirtualStaging ? "STAGING INSTRUCTIONS" : "ADDITIONAL ENHANCEMENT REQUESTS"} (apply while keeping the same scene):\n${imagePrompt}`
-      : baseInstructions
+  // A prohibition containing "add" is not permission to switch into virtual staging.
+  const editingPrompt = buildFaithfulEditPrompt(imagePrompt || "")
 
   try {
     console.log(`[v0] Fetching original image for OpenAI ${model} reference...`)
@@ -267,7 +163,10 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
     formData.append("prompt", editingPrompt)
     formData.append("model", model)
     formData.append("n", "1")
-    formData.append("size", "1536x1024")
+    formData.append("size", "auto")
+    if (model === "gpt-image-1" || model === "gpt-image-1.5") {
+      formData.append("input_fidelity", "high")
+    }
 
     console.log(`[v0] Sending request to OpenAI images/edits API for ${model}...`)
     
@@ -405,14 +304,18 @@ REMEMBER: You are EDITING, not GENERATING. The output must be recognizably THE S
       const imageData = data.data[0]
       if (imageData.b64_json) {
         console.log(`[v0] OpenAI ${model} generated image successfully (base64)`)
-        return `data:image/png;base64,${imageData.b64_json}`
+        const editedUrl = `data:image/png;base64,${imageData.b64_json}`
+        await verifyPropertyFidelity(originalUrl, editedUrl)
+        return editedUrl
       } else if (imageData.url) {
         console.log(`[v0] OpenAI ${model} generated image successfully (URL)`)
         // Fetch the URL and convert to base64 for consistent handling
         const imgResponse = await fetch(imageData.url)
         const imgBuffer = await imgResponse.arrayBuffer()
         const imgBase64 = Buffer.from(imgBuffer).toString("base64")
-        return `data:image/png;base64,${imgBase64}`
+        const editedUrl = `data:image/png;base64,${imgBase64}`
+        await verifyPropertyFidelity(originalUrl, editedUrl)
+        return editedUrl
       }
     }
 
@@ -588,8 +491,7 @@ async function generateNanoBananaImage(originalUrl: string, prompt: string): Pro
       throw new Error("AI image generation unavailable: Missing GOOGLE_CLOUD_API_KEY")
     }
 
-    // Use the Art Director's prompt directly - it already has the right guidance
-    // Only add a light wrapper for context, letting the Art Director control the transformation
+    // Keep Art Director style suggestions subordinate to shared property-preservation rules.
     
     // IMPORTANT: Gemini cannot do outpainting (expanding the view/zooming out)
     // Remove any zoom-out instructions and add explicit framing preservation
@@ -610,61 +512,14 @@ async function generateNanoBananaImage(originalUrl: string, prompt: string): Pro
     //    photos, which looks fake. It should only glow windows for a
     //    dusk/night scene (detected from the Art Director's prompt text).
     // 2. It invents windows, grass, and outdoor furniture that don't exist
-    //    in the original photo. Neither of the two hardcoded templates below
-    //    carried the Art Director's anti-hallucination rules, so we restate
-    //    them here explicitly.
+    //    in the original photo, so the shared preservation wrapper is mandatory.
     const promptTextLower = (processedPrompt || "").toLowerCase()
     const isDuskOrNightScene = /twilight|dusk|night|evening|blue hour/.test(promptTextLower)
     const windowsGuidance = isDuskOrNightScene
       ? "Windows should glow with warm, inviting interior light appropriate for this dusk/night scene."
       : "This is a DAYTIME photo. Windows must show natural daylight and realistic outdoor reflections - do NOT add interior lighting glow, illuminated lamps, or any warm light behind the glass. A daytime photo with glowing windows looks fake."
 
-    const antiHallucinationRules = `MANDATORY ANTI-HALLUCINATION RULES (DO NOT VIOLATE):
-- Do NOT add windows, doors, skylights, or any openings that don't exist in the original photo. Preserve the exact number, size, and position of every existing window and door.
-- Do NOT add grass, lawn, or turf to any surface where none currently exists (patios, decks, concrete, pavers, gravel, or bare dirt must stay as they are).
-- Do NOT add outdoor furniture, umbrellas, planters, dining sets, lounge chairs, or any staging props that are not in the original photo, UNLESS explicitly requested in the instructions below.
-- Do NOT add pools, hot tubs, or any object not visible in the original.`
-
-    const editingPrompt = processedPrompt
-      ? `TRANSFORM this real estate photo into a STUNNING architectural photograph worthy of Architectural Digest or Dwell magazine.
-
-Channel the aesthetic mastery of legendary architectural photographers like Julius Shulman, Ezra Stoller, and Fernando Guerra:
-- DRAMATIC yet natural lighting that makes spaces feel luminous and inviting
-- RICH, vibrant colors with perfect white balance - no dull or washed-out tones
-- CRYSTAL-CLEAR details with professional sharpness
-- ${windowsGuidance}
-- Every surface should have depth, texture, and visual appeal
-
-${processedPrompt}
-
-This should look like a SIGNIFICANT improvement over the original - the kind of transformation that makes viewers say "wow."
-
-${antiHallucinationRules}
-
-MANDATORY FRAMING RULES (DO NOT VIOLATE):
-- Keep the EXACT same aspect ratio as the original image
-- Do NOT zoom in - keep all edges aligned with the original
-- Do NOT crop or cut off any part of the scene
-- The output must show the SAME field of view as the input`
-      : `TRANSFORM this real estate photo into a STUNNING architectural photograph worthy of Architectural Digest or Dwell magazine.
-
-Channel the aesthetic mastery of legendary architectural photographers like Julius Shulman, Ezra Stoller, and Fernando Guerra:
-- DRAMATIC yet natural lighting that makes spaces feel luminous and inviting
-- RICH, vibrant colors with perfect white balance - no dull or washed-out tones
-- CRYSTAL-CLEAR details with professional sharpness
-- ${windowsGuidance}
-- Sky (if visible): Vibrant blue with beautiful clouds
-- Landscaping (if visible, and only if already present): Lush, verdant, magazine-perfect
-
-This should look like a SIGNIFICANT improvement over the original - the kind of transformation that makes viewers say "wow."
-
-${antiHallucinationRules}
-
-MANDATORY FRAMING RULES (DO NOT VIOLATE):
-- Keep the EXACT same aspect ratio as the original image
-- Do NOT zoom in - keep all edges aligned with the original
-- Do NOT crop or cut off any part of the scene
-- The output must show the SAME field of view as the input`
+    const editingPrompt = buildFaithfulEditPrompt(`${processedPrompt}\n\n${windowsGuidance}`)
 
     console.log("[v0] Using combined prompt (base + art director):", editingPrompt.substring(0, 300) + "...")
 
@@ -703,9 +558,6 @@ MANDATORY FRAMING RULES (DO NOT VIOLATE):
               contents: [{ parts }],
               generationConfig: {
                 responseModalities: ["image", "text"],
-                imageConfig: {
-                  aspectRatio: "4:3",
-                },
               },
             }),
             signal: controller.signal,
@@ -775,8 +627,9 @@ MANDATORY FRAMING RULES (DO NOT VIOLATE):
       throw new Error("No image data returned from Gemini")
     }
 
-    console.log("[v0] Successfully generated image with Nano Banana Pro")
-    return `data:image/png;base64,${imageData}`
+    const editedUrl = `data:image/png;base64,${imageData}`
+    await verifyPropertyFidelity(originalUrl, editedUrl)
+    return editedUrl
   } catch (error) {
     console.error("[v0] Nano Banana Pro image generation error:", error)
     throw error
@@ -1227,7 +1080,7 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
       } else if (provider === "openai_2_5") {
         console.log(`[v0] Calling OpenAI GPT Image 2.5 (v${variation_number})`)
         try {
-          const openai25ImageUrl = await generateOpenAIImage(original_url, promptToUse, "gpt-image-2.5")
+          const openai25ImageUrl = await generateOpenAIImage(original_url, promptToUse, MODELS.find(model => model.provider === "openai_2_5")!.modelId)
           console.log(
             "[v0] OpenAI 2.5 returned URL type:",
             openai25ImageUrl?.startsWith("data:") ? "base64" : "url",
@@ -1376,6 +1229,12 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
     }
   } catch (error) {
     console.error("[v0] Edit-image API error:", error)
+
+    if (error instanceof PropertyFidelityError) {
+      return Response.json({ error: error.message, code: error.code }, {
+        status: error.code === "PROPERTY_CHANGED" ? 422 : 503,
+      })
+    }
 
     // Classify the failure so the UI can show plain language. Provider error
     // bodies are logged above but never returned to the browser.

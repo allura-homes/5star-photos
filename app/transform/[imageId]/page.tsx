@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Image from "next/image"
 import { AppShell } from "@/components/app-shell"
+import { friendlyModelError } from "@/lib/model-error"
 import { toast } from "sonner"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { getImageById } from "@/lib/actions/image-actions"
@@ -55,19 +56,7 @@ interface PreviewVariation {
 // Which models run is decided server-side by startTransform() from
 // lib/constants/models.ts (ACTIVE_MODELS) and the user's plan (lib/plans.ts).
 
-/** Turn an /api/edit-image failure into a sentence a host can act on. */
-async function friendlyModelError(response: Response): Promise<string> {
-  try {
-    const data = await response.json()
-    if (typeof data?.error === "string" && !data.error.startsWith("{")) return data.error
-  } catch {
-    /* non-JSON body */
-  }
-  if (response.status === 401) return "Your session expired. Sign in again and retry."
-  if (response.status === 429) return "This model is busy right now. Try again in a minute."
-  if (response.status === 504) return "This model took too long. Try again."
-  return "This model couldn't finish. The other variations aren't affected."
-}
+
 
 export default function TransformPage() {
   const params = useParams()
