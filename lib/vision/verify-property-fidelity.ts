@@ -22,7 +22,7 @@ const RETRY_BASE_DELAY_MS = 1000
 
 async function runFidelityCheck(originalUrl: string, editedUrl: string): Promise<z.infer<typeof fidelitySchema>> {
   const { object } = await generateObject({
-    model: "openai/gpt-4o-mini",
+    model: "google/gemini-2.5-flash-lite",
     schema: fidelitySchema,
     temperature: 0,
     maxOutputTokens: 600,
