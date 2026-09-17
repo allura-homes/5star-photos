@@ -1246,13 +1246,24 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
       } else if (provider === "nano_banana" || provider === "nano_banana_pro" || provider === "gemini_3_pro") {
         console.log(`[v0] Calling Google Gemini 3 Pro Image (v${variation_number})`)
         try {
-          // Nano Banana tends to produce warm/orange lighting for indoor photos
-          // Add explicit lighting guidance to counteract this tendency
-          // Check room_type_guess or prompt content to determine if indoor
-          const indoorRoomTypes = ["bedroom", "living", "kitchen", "bathroom", "dining", "office", "interior", "indoor"]
+          // Nano Banana tends to produce warm/orange lighting for indoor photos.
+          // Add explicit lighting guidance to counteract this tendency.
+          //
+          // Detect indoor vs. outdoor from room_type_guess / prompt content.
+          // The set of possible indoor room names (laundry rooms, pantries,
+          // closets, hallways, etc.) is effectively unbounded, while outdoor
+          // scenes fall into a small, well-defined set of terms - so the gate
+          // is "not explicitly outdoor" rather than "matches a known indoor
+          // room name". An unknown/ambiguous room type is far more likely to
+          // be some room in the house than an exterior shot.
+          const outdoorRoomTypes = [
+            "exterior", "outdoor", "patio", "yard", "garden", "pool", "deck", "driveway",
+            "porch", "balcony", "backyard", "front yard", "landscap", "roofline", "curb",
+          ]
           const roomGuessLower = (room_type_guess || "").toLowerCase()
           const promptLower = (promptToUse || "").toLowerCase()
-          const isIndoor = indoorRoomTypes.some(type => roomGuessLower.includes(type) || promptLower.includes(type))
+          const isExplicitlyOutdoor = outdoorRoomTypes.some(type => roomGuessLower.includes(type) || promptLower.includes(type))
+          const isIndoor = !isExplicitlyOutdoor
           
           const nanoBananaPrompt = isIndoor 
             ? `${promptToUse}\n\nCRITICAL LIGHTING OVERRIDE FOR THIS MODEL: This model tends to produce overly warm, amber, or orange lighting. COUNTERACT this by ensuring:\n- Color temperature stays NEUTRAL to COOL (4000-4500K) - think bright daylight, NOT cozy candlelight\n- Walls MUST remain PURE WHITE or their original color with NO orange/amber color cast\n- Avoid any golden, warm, or amber tones on walls and ceilings\n- Light should feel BRIGHT, CLEAN, and FRESH like morning sunlight through windows\n- NO glowing amber lamps or heavy warm atmospheric lighting\n- Think: CLEAN, CRISP real estate photography, NOT moody interior design magazine`

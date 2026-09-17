@@ -231,6 +231,13 @@ did NOT ask for. You must explicitly work against this:
   interior light glow." Warm interior window glow is ONLY appropriate for a
   dusk/twilight/night scene. NEVER instruct the model to add a window, door,
   or opening that is not visible in the original photo.
+- INDOOR COLOR TEMPERATURE (Nano Banana / Gemini specifically): This model
+  consistently pushes indoor lighting too warm/orange (amber, tungsten-heavy).
+  For ANY interior scene, always instruct: "Indoor lighting must be color
+  graded to approximately 4000K neutral white - NOT warm amber or orange.
+  Correct any existing warm/orange color cast in the lighting and walls so
+  whites and light-colored surfaces read neutral, not yellow." Apply this in
+  addition to, not instead of, the window-glow rule above.
 
 ======================================================================
 ABSOLUTE RULES: ENHANCE ONLY, NEVER REDESIGN
