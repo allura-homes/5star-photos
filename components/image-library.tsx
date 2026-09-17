@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { buildBatchTransformHref } from "@/lib/batch-transform-handoff"
 import Image from "next/image"
 import { useDropzone } from "react-dropzone"
-import { getUserImages, deleteImage, deleteImages, updateImageClassification, uploadImage } from "@/lib/actions/image-actions"
+import { getUserImages, deleteImage, deleteImages, updateImageClassification, uploadImage, reclassifyImage } from "@/lib/actions/image-actions"
 import { prepareImageForUpload } from "@/lib/compress-image"
 import { getUserProjects, assignImagesToProject } from "@/lib/actions/project-actions"
 import type { UserImage, PhotoClassification, Project } from "@/lib/types"
@@ -122,6 +122,7 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
   const [checkedPendingFiles, setCheckedPendingFiles] = useState(false)
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [detectingIds, setDetectingIds] = useState<Set<string>>(new Set())
 
   // Only load images once auth is confirmed
   useEffect(() => {
@@ -432,6 +433,29 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
     await loadImages()
   }
 
+  async function handleDetectClassification(imageId: string) {
+    setDetectingIds((prev) => new Set(prev).add(imageId))
+    try {
+      const { classification, error } = await reclassifyImage(imageId)
+      if (error) {
+        toast.error("Couldn't detect the scene for this photo")
+        return
+      }
+      if (classification === "unknown") {
+        toast.message("Still couldn't tell — set it manually if you know")
+      } else {
+        toast.success(`Detected as ${classification}`)
+      }
+      await loadImages()
+    } finally {
+      setDetectingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(imageId)
+        return next
+      })
+    }
+  }
+
   const getClassificationIcon = (classification: PhotoClassification) => {
     switch (classification) {
       case "indoor":
@@ -694,6 +718,26 @@ export function ImageLibrary({ onSelectImage, onUploadClick, tokenBalance = 0, s
                     {getClassificationIcon(image.classification)}
                     {image.classification}
                   </span>
+
+                  {image.classification === "unknown" && (
+                    <button
+                      onClick={() => handleDetectClassification(image.id)}
+                      disabled={detectingIds.has(image.id)}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#FF3EDB]/15 text-[#FF3EDB] hover:bg-[#FF3EDB]/25 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {detectingIds.has(image.id) ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Detecting...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3" />
+                          Detect
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   {hasVariations && (
                     <span className="text-xs text-slate-400">
