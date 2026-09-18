@@ -5,7 +5,6 @@ import { useState, useEffect, useMemo } from "react"
 import {
   X,
   Sun,
-  Moon,
   Home,
   TreePine,
   Sparkles,
@@ -403,15 +402,6 @@ export function EnhancementPreferencesModal({ isOpen, onClose, onConfirm, files 
                       ))}
                     </div>
                   </div>
-
-                  {/* Virtual Twilight Toggle */}
-                  <ToggleOption
-                    label="Virtual Twilight"
-                    description="Transform daytime to dramatic dusk"
-                    icon={<Moon className="h-4 w-4" />}
-                    checked={preferences.virtualTwilight}
-                    onChange={(v) => updatePreference("virtualTwilight", v)}
-                  />
 
                   {/* Enhance Lawn Toggle */}
                   <ToggleOption

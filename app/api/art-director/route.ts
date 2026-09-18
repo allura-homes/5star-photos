@@ -20,10 +20,9 @@ const artDirectorSchema = z.object({
   debugNotes: z.string().optional(),
 })
 
-// EnhancementPreferences from the modal (skyReplacement, virtualTwilight, etc.)
+// EnhancementPreferences from the modal (skyReplacement, enhanceLawn, etc.)
 type EnhancementPreferences = {
   skyReplacement?: "none" | "clear_blue" | "dramatic_clouds" | "golden_hour" | "twilight"
-  virtualTwilight?: boolean
   enhanceLawn?: boolean
   windowBalance?: boolean
   declutter?: boolean
@@ -61,13 +60,6 @@ function buildUserPreferencesPrompt(preferences: EnhancementPreferences): string
         )
         break
     }
-  }
-
-  // Virtual twilight (transforms daytime to dusk)
-  if (preferences.virtualTwilight) {
-    additions.push(
-      "VIRTUAL TWILIGHT: Transform this photo to appear as if taken at DUSK/TWILIGHT. The sky should be deep blue with hints of orange/pink on the horizon. Windows should glow warmly from interior lights. The overall mood should be elegant evening ambiance. THIS IS A MAJOR TRANSFORMATION - not subtle.",
-    )
   }
 
   // Enhance lawn (outdoor)
@@ -977,11 +969,6 @@ function getDefaultPromptForFilename(filename: string, preferences?: Enhancement
     if (skyInstructions[preferences.skyReplacement]) {
       basePrompt += `\n\nSKY REPLACEMENT: ${skyInstructions[preferences.skyReplacement]}`
     }
-  }
-
-  // Include virtual twilight if enabled
-  if (preferences?.virtualTwilight) {
-    basePrompt += "\n\nVIRTUAL TWILIGHT: Transform this to a twilight/dusk scene with interior lights glowing warmly through windows, deep blue sky at dusk."
   }
 
   // Include reference image description if provided

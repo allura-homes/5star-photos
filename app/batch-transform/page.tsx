@@ -112,6 +112,10 @@ function BatchTransformContent() {
   const [showPreferencesModal, setShowPreferencesModal] = useState(false)
   const [customPreferences, setCustomPreferences] = useState<EnhancementPreferences | null>(null)
   const [hasCustomPreferences, setHasCustomPreferences] = useState(false)
+  // Set when the preferences modal is confirmed via "Transform with Options" so
+  // processing starts automatically once state settles, instead of requiring a
+  // separate "Start Processing" click on top of an already-confirmed action.
+  const [autoStartAfterPreferences, setAutoStartAfterPreferences] = useState(false)
 
   // Image ids arrive in the URL (primary) or sessionStorage (fallback).
   useEffect(() => {
@@ -354,6 +358,18 @@ function BatchTransformContent() {
 
     return completedCount > 0
   }, [profile?.id, user?.id, hasCustomPreferences, customPreferences, refreshProfile])
+
+  // "Transform with Options" already confirms the user's intent to start, so
+  // once the confirmed preferences have settled into state, kick off
+  // processing automatically instead of requiring a second "Start Processing"
+  // click. Waiting for the render after setHasCustomPreferences(true) ensures
+  // processImage's closure has picked up the fresh customPreferences.
+  useEffect(() => {
+    if (autoStartAfterPreferences && hasCustomPreferences && !isProcessing) {
+      setAutoStartAfterPreferences(false)
+      startBatchProcessing()
+    }
+  }, [autoStartAfterPreferences, hasCustomPreferences, isProcessing])
 
   // Update overall progress when individual images complete
   useEffect(() => {
@@ -729,6 +745,7 @@ function BatchTransformContent() {
           setCustomPreferences(preferences)
           setHasCustomPreferences(true)
           setShowPreferencesModal(false)
+          setAutoStartAfterPreferences(true)
         }}
         classification={batchImages[0]?.image?.classification || "indoor"}
         imageName={`${batchImages.length} images`}
