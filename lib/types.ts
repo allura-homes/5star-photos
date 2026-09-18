@@ -20,7 +20,6 @@ export type ColorTemperature = 2500 | 3000 | 3500 | 4000 | 4500
 export interface EnhancementPreferences {
   // Outdoor-specific options
   skyReplacement: "none" | "clear_blue" | "dramatic_clouds" | "golden_hour" | "twilight"
-  virtualTwilight: boolean
   enhanceLawn: boolean
 
   // Indoor-specific options
@@ -52,7 +51,6 @@ export interface ClassifiedPhoto {
 
 export const DEFAULT_ENHANCEMENT_PREFERENCES: EnhancementPreferences = {
   skyReplacement: "none",
-  virtualTwilight: false,
   enhanceLawn: false,
   windowBalance: false,
   declutter: false,
