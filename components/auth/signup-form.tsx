@@ -249,7 +249,7 @@ export function SignupForm({ redirect, source, successNote, submitLabel = "Creat
               onChange={(e) => setPassword(e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, password: true }))}
               aria-invalid={Boolean(passwordError)}
-              aria-describedby="password-hint"
+              aria-describedby={`password-hint${passwordError ? " password-error" : ""}`}
               className={`${inputClass} pr-10 ${passwordError ? invalidClass : ""}`}
               minLength={MIN_PASSWORD_LENGTH}
               required
@@ -273,9 +273,19 @@ export function SignupForm({ redirect, source, successNote, submitLabel = "Creat
               />
             ))}
           </div>
-          <p id="password-hint" className={`text-xs ${passwordError ? "text-red-400" : "text-slate-500"}`}>
-            {passwordError ?? (strength.label ? `${strength.label} password` : PASSWORD_HINT)}
+          <p id="password-hint" className="text-sm text-slate-300 leading-relaxed">
+            {PASSWORD_HINT}
           </p>
+          {passwordError && (
+            <p id="password-error" className="text-sm text-red-400" aria-live="polite">
+              {passwordError}
+            </p>
+          )}
+          {password && !passwordError && isPasswordValid(password) && (
+            <p className="text-sm text-slate-400">
+              Requirements met. Strength: {strength.label.toLowerCase()} (longer passwords are recommended, not required).
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-2">
