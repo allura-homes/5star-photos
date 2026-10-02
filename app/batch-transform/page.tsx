@@ -278,7 +278,8 @@ function BatchTransformContent() {
           variation_number: variationNumber,
           classification: batchImage.image.classification,
           room_type_guess: roomTypeHint,
-          image_prompt: imagePrompt,
+            image_prompt: imagePrompt,
+            sky_replacement: hasCustomPreferences ? customPreferences?.skyReplacement : undefined,
             use_ai_models: true,
           }),
         }, EDIT_IMAGE_TIMEOUT)

@@ -2,6 +2,8 @@ import { z } from "zod"
 import { NextResponse, type NextRequest } from "next/server"
 import { Buffer } from "buffer"
 import { requireUser } from "@/lib/api-auth"
+import { FULL_SUN_INSTRUCTIONS, applyFullSunLighting } from "@/lib/faithful-edit-prompt"
+import type { EnhancementPreferences as SharedEnhancementPreferences } from "@/lib/types"
 
 // Rate limit cooldown - skip Gemini API calls for 5 minutes after being rate limited
 let geminiRateLimitedUntil = 0
@@ -21,17 +23,7 @@ const artDirectorSchema = z.object({
 })
 
 // EnhancementPreferences from the modal (skyReplacement, enhanceLawn, etc.)
-type EnhancementPreferences = {
-  skyReplacement?: "none" | "clear_blue" | "dramatic_clouds" | "golden_hour" | "twilight"
-  enhanceLawn?: boolean
-  windowBalance?: boolean
-  declutter?: boolean
-  straightenVerticals?: boolean
-  zoomOut?: "none" | "slight" | "moderate" | "significant"
-  additionalInstructions?: string
-  referenceImageUrl?: string
-  referenceImageDescription?: string
-}
+type EnhancementPreferences = Partial<SharedEnhancementPreferences>
 
 function buildUserPreferencesPrompt(preferences: EnhancementPreferences): string {
   const additions: string[] = []
@@ -40,9 +32,7 @@ function buildUserPreferencesPrompt(preferences: EnhancementPreferences): string
   if (preferences.skyReplacement && preferences.skyReplacement !== "none") {
     switch (preferences.skyReplacement) {
       case "clear_blue":
-        additions.push(
-          "SKY REPLACEMENT: Replace the sky with a CLEAR, VIBRANT BLUE sky with minimal clouds. Bright, sunny daytime conditions.",
-        )
+        additions.push(FULL_SUN_INSTRUCTIONS)
         break
       case "dramatic_clouds":
         additions.push(
@@ -598,8 +588,12 @@ export async function POST(req: NextRequest) {
   const auth = await requireUser(req)
   if (!auth.ok) return auth.response
 
+  let fallbackFilename = "unknown"
+  let fallbackPreferences: EnhancementPreferences | undefined
   try {
     const { filename, room_type_guess, style_mode, original_url, user_preferences } = await req.json()
+    fallbackFilename = typeof filename === "string" ? filename : "unknown"
+    fallbackPreferences = user_preferences
 
     console.log("[v0] Art Director request:", { 
       filename, 
@@ -911,17 +905,15 @@ Return ONLY the JSON object with imagePrompt and debugNotes fields. No markdown,
     console.log("[v0] Art Director output - imagePrompt length:", finalPrompt.length)
 
     return NextResponse.json({
-      imagePrompt: finalPrompt,
+      imagePrompt: applyFullSunLighting(finalPrompt, prefs?.skyReplacement),
       debugNotes: validated.debugNotes
     })
   } catch (error) {
     console.error("[v0] Art Director unexpected error:", error instanceof Error ? error.message : String(error))
 
-    // Note: We don't have access to user_preferences here since the error may have occurred before parsing
-    // But this is a rare edge case - most errors are caught above with proper preference handling
     return NextResponse.json({
-      imagePrompt: getDefaultPromptForFilename("unknown"),
-      debugNotes: "Art Director error - using default prompt",
+      imagePrompt: getDefaultPromptForFilename(fallbackFilename, fallbackPreferences),
+      debugNotes: "Art Director error - using default prompt with user preferences",
     })
   }
 }
@@ -961,7 +953,7 @@ function getDefaultPromptForFilename(filename: string, preferences?: Enhancement
   // Include sky replacement if specified
   if (preferences?.skyReplacement && preferences.skyReplacement !== "none") {
     const skyInstructions: Record<string, string> = {
-      clear_blue: "Replace the sky with a CLEAR, VIBRANT BLUE sky with minimal clouds.",
+      clear_blue: FULL_SUN_INSTRUCTIONS,
       dramatic_clouds: "Replace the sky with DRAMATIC, PUFFY WHITE CLOUDS against a rich blue sky.",
       golden_hour: "Replace the sky with GOLDEN HOUR lighting - warm orange and golden tones.",
       twilight: "Replace the sky with a TWILIGHT/DUSK sky - deep blue with warm horizon glow.",

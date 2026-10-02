@@ -225,14 +225,15 @@ export function SingleImagePreferencesModal({
                     <div className="grid grid-cols-5 gap-2">
                       {[
                         { value: "none", label: "None", icon: null },
-                        { value: "clear_blue", label: "Clear Blue", icon: "☀️" },
+                        { value: "clear_blue", label: "Full Sun", icon: "☀️" },
                         { value: "dramatic_clouds", label: "Dramatic", icon: "⛅" },
                         { value: "golden_hour", label: "Golden", icon: "🌅" },
                         { value: "twilight", label: "Twilight", icon: "🌆" },
                       ].map((option) => (
                         <button
                           key={option.value}
-                          onClick={() => updatePreference("skyReplacement", option.value as any)}
+                          onClick={() => updatePreference("skyReplacement", option.value as EnhancementPreferences["skyReplacement"])}
+                          aria-pressed={preferences.skyReplacement === option.value}
                           className={cn(
                             "p-2 rounded-lg text-xs text-center transition-all",
                             preferences.skyReplacement === option.value
@@ -246,6 +247,12 @@ export function SingleImagePreferencesModal({
                       ))}
                     </div>
                   </div>
+
+                  {preferences.skyReplacement === "clear_blue" && (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      Full Sun relights outdoor photos for bright noon daylight with soft bounce fill, natural warmth, and balanced shadows—not just a blue sky. Property details stay unchanged.
+                    </p>
+                  )}
 
                   {/* Enhance Lawn Toggle */}
                   <ToggleOption
