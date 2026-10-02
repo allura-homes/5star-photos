@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
-import { Header } from "@/components/header"
+import Link from "next/link"
+import { PublicPageShell } from "@/components/public-page-shell"
+import { FaqList } from "@/components/faq-list"
 import { PricingTable } from "@/components/billing/pricing-table"
 import { TopupPacks } from "@/components/billing/topup-packs"
 import { CreditCostTable } from "@/components/billing/credit-cost-table"
@@ -8,10 +10,14 @@ import { PLANS, WELCOME_CREDITS } from "@/lib/plans"
 
 export const metadata: Metadata = {
   title: "Pricing - 5star.photos",
-  description: `Simple credit-based pricing for AI real estate photo enhancement. Start free with ${WELCOME_CREDITS} credits, then pick a plan from ${PLANS.startup.monthlyPriceCents / 100}/month.`,
+  description: `Simple credit-based pricing for AI real estate photo enhancement. Start free with ${WELCOME_CREDITS} credits, then pick a plan from $${PLANS.startup.monthlyPriceCents / 100}/month. Compare monthly and annual billing, included credits, and top-ups.`,
 }
 
 const FAQ = [
+  {
+    q: "How does annual billing work?",
+    a: "Pay for a year upfront at the price of ten monthly payments. Your included credits still refill monthly, not all at once. Unused monthly credits do not roll over.",
+  },
   {
     q: "What is a credit?",
     a: "A credit is the unit every action costs. A finished photo (upload, transform, hi-res download) is 14 credits. Your plan refills credits every month; unused plan credits do not roll over.",
@@ -36,18 +42,17 @@ const FAQ = [
 
 export default function PricingPage() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1 pt-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 flex flex-col gap-16">
+    <PublicPageShell>
+        <div className="flex flex-col gap-16">
           <header className="flex flex-col items-center gap-4 text-center">
             <p className="text-sm font-semibold uppercase tracking-wider text-[#FF3EDB]">Pricing</p>
             <h1 className="text-4xl sm:text-5xl font-bold text-white text-balance max-w-3xl">
-              Listing photos that stop the scroll, priced per photo
+              A 5-star first impression.
+              A plan that fits.
             </h1>
-            <p className="text-lg text-slate-400 text-pretty max-w-2xl">
-              Every new account starts with {WELCOME_CREDITS} free credits, enough to finish three real photos. When you
-              are ready, pick the plan that matches how many homes you list.
+            <p className="text-lg leading-relaxed text-muted-foreground text-pretty max-w-2xl">
+              Start with {WELCOME_CREDITS} free credits. See the difference on your own photos,
+              then choose the monthly credits that fit your listings. No card needed to try.
             </p>
           </header>
 
@@ -63,17 +68,12 @@ export default function PricingPage() {
             <h2 id="pricing-faq" className="text-2xl font-bold text-white text-center">
               Questions
             </h2>
-            <dl className="flex flex-col gap-3">
-              {FAQ.map((item) => (
-                <div key={item.q} className="glass-card rounded-2xl p-5 flex flex-col gap-2">
-                  <dt className="font-semibold text-white">{item.q}</dt>
-                  <dd className="text-sm text-slate-400 leading-relaxed">{item.a}</dd>
-                </div>
-              ))}
-            </dl>
+            <FaqList items={FAQ} />
+            <p className="text-center text-sm text-muted-foreground">
+              Not sure which plan fits? <Link href="/help#contact" className="font-medium text-foreground underline underline-offset-4 hover:text-primary">Talk to us</Link>.
+            </p>
           </section>
         </div>
-      </main>
-    </div>
+    </PublicPageShell>
   )
 }

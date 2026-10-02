@@ -1,13 +1,15 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { Upload, Wand2, Download, Coins, Camera, HelpCircle, ArrowRight } from "lucide-react"
-import { AppShell } from "@/components/app-shell"
+import { PublicPageShell } from "@/components/public-page-shell"
+import { FaqList } from "@/components/faq-list"
+import { ContactForm } from "@/components/help/contact-form"
 import { ACTIVE_MODELS } from "@/lib/constants/models"
 import { CREDIT_COSTS, WELCOME_CREDITS } from "@/lib/plans"
 
 export const metadata: Metadata = {
-  title: "Help - 5star.photos",
-  description: "How to enhance your real estate photos with 5star.photos: upload, pick a variation, download.",
+  title: "Help & Contact - 5star.photos",
+  description: "Get answers about photo enhancement, credits and subscriptions, or contact the 5star.photos team. Help is available with or without an account.",
 }
 
 const STEPS = [
@@ -19,7 +21,7 @@ const STEPS = [
   {
     icon: Wand2,
     title: "Enhance",
-    body: "Open a photo and press Transform. Three AI models each produce a version. Compare them side by side, thumbs-up the ones you like and save the best.",
+    body: "Open a photo and press Transform. The models included in your plan each create a variation. Compare the results, check that the property is represented accurately, and choose your favorite.",
   },
   {
     icon: Download,
@@ -39,7 +41,7 @@ const TIPS = [
 const FAQ = [
   {
     q: "Which variation should I pick?",
-    a: "There is no wrong answer. V1 is the more faithful OpenAI result, V2 is OpenAI's newest image model, and V3 is Google's latest. Many hosts save two and A/B test them on their listing.",
+    a: "Compare lighting, detail and accuracy against the original. V1, V2 and V3 offer different enhancement styles; V4 is also included for everyone during beta. Pick the version that best represents your actual property, not just the most dramatic edit.",
   },
   {
     q: "One of the variations says it is unavailable. Did something break?",
@@ -51,33 +53,54 @@ const FAQ = [
   },
   {
     q: "Will you change the layout of my property?",
-    a: "No. The models are instructed to keep walls, windows, furniture placement and fixtures exactly where they are. They fix lighting, colour, sky, lawn and small clutter only.",
+    a: "Standard enhancements are instructed to preserve the structure, furniture and fixtures, and results are checked against the original. AI can still make mistakes: review every image before publishing. Virtual staging and twilight are separate, intentional effects; follow your listing platform's disclosure rules when using them.",
   },
   {
-    q: "Where are my old jobs from the previous version?",
-    a: "The earlier job-based flow was retired in this release. Everything you saved is still in your Library.",
+    q: "Do I need a paid plan to try it?",
+    a: `No. New accounts receive ${WELCOME_CREDITS} welcome credits without a credit card. Paid plans add monthly credits, and subscribers can buy top-up packs. Visit Pricing to compare the options.`,
   },
 ]
 
 export default function HelpPage() {
   return (
-    <AppShell>
-      <div className="max-w-4xl mx-auto flex flex-col gap-12">
+    <PublicPageShell>
+      <div className="mx-auto flex max-w-6xl flex-col gap-12">
         <header className="flex flex-col gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-fuchsia-500/20 flex items-center justify-center">
               <HelpCircle className="w-5 h-5 text-fuchsia-300" />
             </div>
-            <h1 className="text-3xl font-bold text-white">Help</h1>
+            <h1 className="text-balance text-3xl font-bold text-foreground sm:text-4xl">A little help. A better photo.</h1>
           </div>
-          <p className="text-slate-400 text-pretty max-w-2xl">
-            5star.photos turns ordinary listing photos into ones that make guests stop scrolling. Here is how it works
-            and how to get the best results.
+          <p className="text-muted-foreground text-pretty max-w-2xl">
+            Find a quick answer, get more from your photos, or send our team a message.
+            You do not need an account to get in touch.
           </p>
+          <nav aria-label="Help sections" className="flex flex-wrap gap-5 text-sm font-medium text-foreground">
+            <a href="#contact" className="underline decoration-primary underline-offset-4">Contact us</a>
+            <a href="#faq" className="underline underline-offset-4">Common questions</a>
+            <a href="#how-it-works" className="underline underline-offset-4">Getting started</a>
+          </nav>
         </header>
 
+        <div className="grid items-start gap-8 lg:grid-cols-2">
+          <section id="contact" aria-labelledby="contact-title" className="scroll-mt-24 rounded-3xl border border-border bg-foreground/5 p-6 sm:p-8">
+            <div className="flex flex-col gap-2 pb-6">
+              <p className="text-sm font-semibold uppercase tracking-wider text-primary">Contact us</p>
+              <h2 id="contact-title" className="text-2xl font-bold text-foreground">What can we help with?</h2>
+              <p className="text-sm leading-relaxed text-muted-foreground">Your message goes directly to our team. We will reply to the email address you provide.</p>
+            </div>
+            <ContactForm />
+          </section>
+          <section id="faq" aria-labelledby="faq-title" className="flex scroll-mt-24 flex-col gap-5">
+            <h2 id="faq-title" className="text-2xl font-bold text-foreground">Common questions</h2>
+            <FaqList items={FAQ} />
+            <p className="text-sm leading-relaxed text-muted-foreground">Prefer email? <a href="mailto:5star.photos@allurahomes.com" className="break-all text-foreground underline underline-offset-4">5star.photos@allurahomes.com</a></p>
+          </section>
+        </div>
+
         <section aria-labelledby="how-it-works" className="flex flex-col gap-6">
-          <h2 id="how-it-works" className="text-xl font-semibold text-white">
+          <h2 id="how-it-works" className="scroll-mt-24 text-xl font-semibold text-white">
             How it works
           </h2>
           <ol className="grid gap-4 md:grid-cols-3">
@@ -90,7 +113,7 @@ export default function HelpPage() {
                   <step.icon className="w-5 h-5 text-fuchsia-300" aria-hidden="true" />
                   <h3 className="font-semibold text-white">{step.title}</h3>
                 </div>
-                <p className="text-sm text-slate-400 leading-relaxed">{step.body}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{step.body}</p>
               </li>
             ))}
           </ol>
@@ -107,15 +130,15 @@ export default function HelpPage() {
           <h2 id="variations" className="text-xl font-semibold text-white">
             The variations
           </h2>
-          <p className="text-slate-400 text-pretty">
+          <p className="text-muted-foreground text-pretty">
             Every transform runs your photo through {ACTIVE_MODELS.length} different AI models at once. Each has its own
             personality, so you always have a choice.
           </p>
-          <ul className="grid gap-4 sm:grid-cols-3">
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {ACTIVE_MODELS.map((m) => (
               <li key={m.provider} className="glass-card rounded-2xl p-5 flex flex-col gap-2">
                 <span className="text-2xl font-bold text-white">{m.label}</span>
-                <p className="text-sm text-slate-400 leading-relaxed">{m.description}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{m.description}</p>
               </li>
             ))}
           </ul>
@@ -128,7 +151,7 @@ export default function HelpPage() {
               Credits
             </h2>
           </div>
-          <p className="text-slate-400 text-pretty">
+          <p className="text-muted-foreground text-pretty">
             Every new account starts with {WELCOME_CREDITS} welcome credits. Credits are spent on the actions below and
             your balance is always shown in the header. Plans refill credits monthly; top-up packs add more whenever you
             need them.
@@ -174,37 +197,8 @@ export default function HelpPage() {
           </ul>
         </section>
 
-        <section aria-labelledby="faq" className="flex flex-col gap-6">
-          <h2 id="faq" className="text-xl font-semibold text-white">
-            Common questions
-          </h2>
-          <div className="flex flex-col gap-3">
-            {FAQ.map((item) => (
-              <details key={item.q} className="glass-card rounded-2xl group">
-                <summary className="cursor-pointer list-none px-5 py-4 font-medium text-white flex items-center justify-between gap-4">
-                  {item.q}
-                  <span className="text-slate-500 group-open:rotate-90 transition-transform" aria-hidden="true">
-                    &rsaquo;
-                  </span>
-                </summary>
-                <p className="px-5 pb-5 text-sm text-slate-400 leading-relaxed text-pretty">{item.a}</p>
-              </details>
-            ))}
-          </div>
-        </section>
 
-        <footer className="flex flex-wrap gap-6 text-sm text-slate-500 border-t border-white/10 pt-6">
-          <Link href="/privacy" className="hover:text-white transition-colors">
-            Privacy
-          </Link>
-          <Link href="/terms" className="hover:text-white transition-colors">
-            Terms
-          </Link>
-          <a href="mailto:support@5star.photos" className="hover:text-white transition-colors">
-            support@5star.photos
-          </a>
-        </footer>
       </div>
-    </AppShell>
+    </PublicPageShell>
   )
 }

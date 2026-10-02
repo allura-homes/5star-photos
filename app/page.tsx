@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { Header } from "@/components/header"
+import { SiteFooter } from "@/components/site-footer"
 import { useAuthContext } from "@/lib/contexts/auth-context"
 import { Sparkles, Ruler, Sun, CheckCircle, Upload, Clock, Download, Camera, ArrowRight, Star } from "lucide-react"
 import { BeforeAfterSlider } from "@/components/before-after-slider"
@@ -248,23 +249,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="py-12 px-6 border-t border-white/10">
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-2">
-            <Camera className="w-6 h-6 text-[#FF3EDB]" />
-            <span className="text-lg font-bold text-white">5star.photos</span>
-          </div>
-          <p className="text-[#C9CCDA] text-sm">© 2025 5star.photos. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <Link href="/privacy" className="text-[#C9CCDA] hover:text-white text-sm transition-colors">
-              Privacy
-            </Link>
-            <Link href="/terms" className="text-[#C9CCDA] hover:text-white text-sm transition-colors">
-              Terms
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   )
 }

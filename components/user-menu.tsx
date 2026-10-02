@@ -161,6 +161,14 @@ export function UserMenu() {
                 Activity
               </Link>
               <Link
+                href="/pricing"
+                onClick={() => setIsOpen(false)}
+                className="flex items-center gap-3 px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+              >
+                <Coins className="size-4" aria-hidden="true" />
+                Pricing & plans
+              </Link>
+              <Link
                 href="/help"
                 onClick={() => setIsOpen(false)}
                 className="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
