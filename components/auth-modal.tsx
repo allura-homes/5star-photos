@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { MIN_PASSWORD_LENGTH, PASSWORD_HINT, getPasswordError } from "@/lib/password-policy"
 import { X, Mail, Lock, User, Loader2, Sparkles } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -67,6 +68,13 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (mode === "signup") {
+      const passwordError = getPasswordError(password)
+      if (passwordError) {
+        setError(passwordError)
+        return
+      }
+    }
     setIsLoading(true)
     setError(null)
 
@@ -288,14 +296,23 @@ export function AuthModal({ isOpen, onClose, onSuccess, freePreviewsRemaining = 
                           <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                           <input
                             type="password"
-                            placeholder="Password (min 6 characters)"
+                            placeholder="Password"
+                            aria-label="Password"
+                            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                            aria-describedby={mode === "signup" ? "modal-password-hint" : undefined}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
-                            minLength={6}
+                            minLength={mode === "signup" ? MIN_PASSWORD_LENGTH : undefined}
                             className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
                           />
                         </div>
+
+                        {mode === "signup" && (
+                          <p id="modal-password-hint" className="text-sm text-slate-300 leading-relaxed">
+                            {PASSWORD_HINT}
+                          </p>
+                        )}
 
                         <button
                           type="submit"

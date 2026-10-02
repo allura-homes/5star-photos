@@ -6,7 +6,7 @@
  */
 export const MIN_PASSWORD_LENGTH = 6
 
-export const PASSWORD_HINT = `At least ${MIN_PASSWORD_LENGTH} characters with a letter and a number.`
+export const PASSWORD_HINT = `Use at least ${MIN_PASSWORD_LENGTH} characters, including at least one letter and one number. Uppercase letters and symbols are not required.`
 
 export function getPasswordError(password: string): string | null {
   if (password.length < MIN_PASSWORD_LENGTH) return `Use at least ${MIN_PASSWORD_LENGTH} characters`

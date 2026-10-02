@@ -238,6 +238,7 @@ export default function TransformPage() {
             apply_watermark: true,
             use_ai_models: true,
             image_prompt: imagePrompt,
+            sky_replacement: activePreferences?.skyReplacement,
           }),
         })
 

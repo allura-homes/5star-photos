@@ -3,7 +3,7 @@ import { Buffer } from "buffer"
 import { requireUser } from "@/lib/api-auth"
 import { isDataUrl, persistDataUrlAsVariation } from "@/lib/storage/upload-data-url"
 import { createDirectClient } from "@/lib/supabase/direct"
-import { buildFaithfulEditPrompt } from "@/lib/faithful-edit-prompt"
+import { applyFullSunLighting, buildFaithfulEditPrompt, getWindowLightingGuidance } from "@/lib/faithful-edit-prompt"
 import { PropertyFidelityError, verifyPropertyFidelity } from "@/lib/vision/verify-property-fidelity"
 import { MODELS } from "@/lib/constants/models"
 
@@ -513,11 +513,7 @@ async function generateNanoBananaImage(originalUrl: string, prompt: string): Pro
     //    dusk/night scene (detected from the Art Director's prompt text).
     // 2. It invents windows, grass, and outdoor furniture that don't exist
     //    in the original photo, so the shared preservation wrapper is mandatory.
-    const promptTextLower = (processedPrompt || "").toLowerCase()
-    const isDuskOrNightScene = /twilight|dusk|night|evening|blue hour/.test(promptTextLower)
-    const windowsGuidance = isDuskOrNightScene
-      ? "Windows should glow with warm, inviting interior light appropriate for this dusk/night scene."
-      : "This is a DAYTIME photo. Windows must show natural daylight and realistic outdoor reflections - do NOT add interior lighting glow, illuminated lamps, or any warm light behind the glass. A daytime photo with glowing windows looks fake."
+    const windowsGuidance = getWindowLightingGuidance(processedPrompt)
 
     const editingPrompt = buildFaithfulEditPrompt(`${processedPrompt}\n\n${windowsGuidance}`)
 
@@ -966,7 +962,7 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
       imagePromptLength: image_prompt?.length || 0,
     })
 
-    const promptToUse = image_prompt || custom_prompt
+    const promptToUse = applyFullSunLighting(image_prompt || custom_prompt || "", body.sky_replacement)
 
     const AI_PROVIDERS = [
       "openai",
