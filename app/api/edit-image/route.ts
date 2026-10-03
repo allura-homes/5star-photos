@@ -1240,7 +1240,20 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
     let status = 500
     let friendly = "This model couldn't finish. The other variations aren't affected."
 
-    if (lower.includes("quota") || lower.includes("429") || lower.includes("rate limit")) {
+    // Credit/billing exhaustion is NOT transient - retrying will never help,
+    // so it must be checked before the generic rate-limit branch below (which
+    // also matches "quota" and would otherwise overwrite this with the
+    // misleading "try again in a minute" message).
+    if (
+      lower.includes("credit_balance_exhausted") ||
+      lower.includes("no credits remaining") ||
+      lower.includes("billing_hard_limit_reached") ||
+      lower.includes("billing limit")
+    ) {
+      code = "BILLING_EXHAUSTED"
+      status = 429
+      friendly = "This model is out of credits. Add credits in the provider's billing dashboard - retrying will not help."
+    } else if (lower.includes("quota") || lower.includes("429") || lower.includes("rate limit")) {
       code = "RATE_LIMITED"
       status = 429
       friendly = "This model is busy right now. Try again in a minute."
