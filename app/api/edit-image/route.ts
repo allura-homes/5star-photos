@@ -1228,7 +1228,7 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
 
     if (error instanceof PropertyFidelityError) {
       return Response.json({ error: error.message, code: error.code }, {
-        status: error.code === "PROPERTY_CHANGED" ? 422 : 503,
+        status: error.code === "PROPERTY_CHANGED" ? 422 : error.code === "FIDELITY_CHECK_OUT_OF_CREDITS" ? 402 : 503,
       })
     }
 
@@ -1248,7 +1248,9 @@ async function runEditImage(body: Record<string, unknown>): Promise<Response> {
       lower.includes("credit_balance_exhausted") ||
       lower.includes("no credits remaining") ||
       lower.includes("billing_hard_limit_reached") ||
-      lower.includes("billing limit")
+      lower.includes("billing limit") ||
+      lower.includes("prepayment credits are depleted") ||
+      lower.includes("gemini 402")
     ) {
       code = "BILLING_EXHAUSTED"
       status = 429

@@ -10,12 +10,27 @@ const fidelitySchema = z.object({
 type FidelityResult = z.infer<typeof fidelitySchema>
 
 export class PropertyFidelityError extends Error {
-  constructor(public readonly code: "PROPERTY_CHANGED" | "FIDELITY_CHECK_UNAVAILABLE") {
-    super(code === "PROPERTY_CHANGED"
-      ? "This result changed the landscaping, materials, or architecture and was not saved. Try another variation."
-      : "We couldn't verify that this result preserves your property, so it was not saved. Please retry.")
+  constructor(public readonly code: "PROPERTY_CHANGED" | "FIDELITY_CHECK_UNAVAILABLE" | "FIDELITY_CHECK_OUT_OF_CREDITS") {
+    super(
+      code === "PROPERTY_CHANGED"
+        ? "This result changed the landscaping, materials, or architecture and was not saved. Try another variation."
+        : code === "FIDELITY_CHECK_OUT_OF_CREDITS"
+          ? "The property-verification service is out of credits, so this result was not saved. Retrying will not help until the Google AI billing balance is topped up."
+          : "We couldn't verify that this result preserves your property, so it was not saved. Please retry.",
+    )
     this.name = "PropertyFidelityError"
   }
+}
+
+class BillingExhaustedError extends Error {}
+
+function isBillingExhausted(status: number, body: string): boolean {
+  const lower = body.toLowerCase()
+  return (
+    status === 402 ||
+    lower.includes("prepayment credits are depleted") ||
+    (lower.includes("billing") && lower.includes("resource_exhausted"))
+  )
 }
 
 const MODEL = "gemini-2.5-flash-lite"
@@ -94,7 +109,13 @@ async function runFidelityCheck(originalUrl: string, editedUrl: string): Promise
         }),
       },
     )
-    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`)
+    if (!res.ok) {
+      const body = (await res.text()).slice(0, 300)
+      if (isBillingExhausted(res.status, body)) {
+        throw new BillingExhaustedError(`Gemini ${res.status}: ${body}`)
+      }
+      throw new Error(`Gemini ${res.status}: ${body}`)
+    }
     const json = await res.json()
     const text: string | undefined = json?.candidates?.[0]?.content?.parts?.[0]?.text
     if (!text) throw new Error(`Gemini returned no text (finishReason: ${json?.candidates?.[0]?.finishReason ?? "unknown"})`)
@@ -120,6 +141,9 @@ export async function verifyPropertyFidelity(originalUrl: string, editedUrl: str
     } catch (error) {
       lastError = error
       console.error(`[v0] Property fidelity check failed (attempt ${attempt}/${MAX_ATTEMPTS}):`, error)
+      if (error instanceof BillingExhaustedError) {
+        throw new PropertyFidelityError("FIDELITY_CHECK_OUT_OF_CREDITS")
+      }
       if (attempt < MAX_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * attempt))
       }
